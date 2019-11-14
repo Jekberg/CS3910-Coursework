@@ -2,6 +2,7 @@
 #include "CS3910/PSO.h"
 #include <algorithm>
 #include <cassert>
+#include <cmath>
 #include <cstddef>
 #include <fstream>
 #include <iterator>
@@ -46,7 +47,9 @@ bool Read(
         for(++i; i < line.end(); ++i)
         {
             auto it = std::find(i, line.end(), ',');
-            temp.push_back(std::stod(std::string{i, it}));
+            if(it == line.end())
+                break;
+            temp.push_back(std::stod(std::string{ i, it }));
             i = it;
         }
 
@@ -57,107 +60,6 @@ bool Read(
 
     return true;
 }
-
-struct CandidateSolution
-{
-    std::unique_ptr<double[]> position;
-    std::unique_ptr<double[]> velocity;
-    std::unique_ptr<double[]> bestPosition;
-    double cost;
-    double bestCost;
-};
-
-template<
-    typename OutputIt,
-    typename RngT>
-void InitialisePopulation(
-    OutputIt first,
-    OutputIt last,
-    RngT& rng,
-    std::size_t count)
-{
-    std::generate(
-        first,
-        last,
-        [&]()
-        {
-            auto position {std::make_unique<double[]>(count)};
-            InitialiseRandomWeights(position.get(), position.get() + count, rng);
-
-            auto bestPosition {std::make_unique<double[]>(count)};
-            std::copy(position.get(), position.get() + count, bestPosition.get());
-
-            auto velocity {std::make_unique<double[]>(count)};
-            std::fill(velocity.get(), velocity.get() + count, 0);
-
-            return CandidateSolution{
-                std::move(position),
-                std::move(velocity),
-                std::move(bestPosition),
-                std::numeric_limits<double>::infinity(),
-                std::numeric_limits<double>::infinity()};
-        });
-}
-
-template<
-    typename ForwardIt,
-    typename ForwardDataIt,
-    typename ForwardDemandIt>
-void EvaluatePopulation(
-    ForwardIt first,
-    ForwardIt last,
-    ForwardDataIt firstData,
-    ForwardDataIt lastData,
-    ForwardDemandIt demandIt,
-    std::size_t count)
-{
-    std::for_each(
-        first,
-        last,
-        [=](auto&& p)
-        {
-            p.cost = EstemateCost(
-                firstData,
-                lastData,
-                demandIt,
-                p.position.get());
-
-            if(p.cost < p.bestCost)
-            {
-                p.bestCost = p.cost;
-                std::copy(
-                    p.position.get(),
-                    p.position.get() + count,
-                    p.vestPosition.get());
-            }
-        });
-}
-
-class ParticleSwarmPopulation
-{
-public:
-    struct Candidate
-    {
-        double* position;
-        double* velocity;
-        double* bestPosition;
-    };
-
-    explicit ParticleSwarmPopulation(
-        std::size_t populationSize,
-        std::size_t count);
-
-    template<typename Consumer>
-    void ForEach(Consumer&& consumer);
-
-private:
-    std::vector<double> positions_;
-    std::vector<double> velocities_;
-    std::vector<double> bestPositions_;
-    std::vector<Candidate> population_;
-}
-
-
 
 int main()
 {
@@ -171,38 +73,80 @@ int main()
         std::back_inserter(demand),
         std::back_inserter(data));
 
-    std::vector<double> population(10);
+    ParticleSwarmPopulation population{100, count};
     std::random_device rng{};
-    
-    InitialisePopulation(population.begin(), population.end(), rng, count);
+
+    population.ForEach([&](auto&& p)
+    {
+        InitialiseRandomWeights(p.position, p.position + count, rng);
+        std::copy(p.position, p.position + count, p.bestPosition);
+        std::fill(p.velocity, p.velocity + count, 0.0);
+
+        p.cost = EstemateCost(
+            data.begin(), 
+            data.end(), 
+            demand.begin(),
+            p.position);
+
+        p.bestCost = p.cost;
+    });
+
+    double allTimeBest = std::numeric_limits<double>::infinity();
 
     while(true)
     {
-        EvaluatePopulation(
-            population.begin(),
-            population.end(),
-            data.begin(),
-            data.end(),
-            demand.begin(),
-            count);
-    }
-}
+        std::vector<double> globalBestPosition;
+        auto globalBestCost = population.FindMin(
+            std::back_inserter(globalBestPosition),
+            [](auto const& a, auto const& b)
+            {
+                return a.cost < b.cost;
+            });
 
-ParticleSwarmPopulation::ParticleSwarmPopulation(
-    std::size_t populationSize,
-    std::size_t count)
-    : positions_(populationSize * count)
-    , velocities_(populationSize * count)
-    , bestPositions_(populationSize * count)
-    , population_(populationSize)
-{
-}
+        if(globalBestCost < allTimeBest)
+        {
+            allTimeBest = globalBestCost;
+            std::cout << globalBestCost << '|';
+            for(auto&& x: globalBestPosition)
+                std::cout << ' ' << x;
+            std::cout << '\n';
+        }
 
-template<typename Consumer>
-void ParticleSwarmPopulation::ForEach(Consumer&& consumer)
-{
-    std::for_each(
-        population.begin(),
-        population.end(),
-        consumer);
+        population.ForEach([&](auto&& p)
+        {
+            NextPosition(
+                p.position,
+                p.position + count,
+                p.bestPosition,
+                globalBestPosition.data(),
+                p.velocity,
+                p.position,
+                rng,
+                1.0 / (2.0 * std::log(2)),
+                1.0 / 2.0 + std::log(2),
+                1.0 / 2.0 + std::log(2));
+
+            p.cost = EstemateCost(
+                data.begin(),
+                data.end(),
+                demand.begin(),
+                p.position);
+
+            if (p.cost < p.bestCost)
+            {
+                p.bestCost = p.cost;
+                std::copy(p.position, p.position + count, p.bestPosition);
+            }
+        });
+    };
+
+    population.ForEach([&](auto&& p)
+    {
+        std::for_each(p.position, p.position + count, [](auto& x)
+        {
+            std::cout << ' ' << x; 
+        });
+
+        std::cout << '\n';
+    });
 }

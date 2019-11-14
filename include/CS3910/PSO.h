@@ -3,6 +3,86 @@
 
 #include <random>
 
+class ParticleSwarmPopulation
+{
+public:
+    struct Candidate
+    {
+        double* position;
+        double* velocity;
+        double* bestPosition;
+        double cost;
+        double bestCost;
+    };
+
+    explicit ParticleSwarmPopulation(
+        std::size_t populationSize,
+        std::size_t count);
+
+    template<typename Consumer>
+    void ForEach(Consumer&& consumer);
+
+    template<typename OutputIt, typename Compare>
+    double FindMin(OutputIt outIt, Compare&& compare)
+    {
+        auto it = std::min_element(
+            population_.begin(),
+            population_.end(),
+            compare);
+        std::copy(it->position, it->position + vectorSize_, outIt);
+        return it->cost;
+    }
+
+    constexpr std::size_t VectorSize() const noexcept;
+
+    std::size_t PopulationSize() const noexcept;
+
+private:
+    std::vector<double> positions_;
+    std::vector<double> velocities_;
+    std::vector<double> bestPositions_;
+    std::vector<Candidate> population_;
+    std::size_t vectorSize_;
+};
+
+ParticleSwarmPopulation::ParticleSwarmPopulation(
+    std::size_t populationSize,
+    std::size_t vectorSize)
+    : positions_(populationSize * vectorSize)
+    , velocities_(populationSize * vectorSize)
+    , bestPositions_(populationSize * vectorSize)
+    , population_(populationSize)
+    , vectorSize_{ vectorSize }
+{
+
+    for (std::size_t i{}; i != population_.size(); ++i)
+    {
+        auto& p{population_[i]};
+        p.position = positions_.data() + vectorSize * i;
+        p.velocity = velocities_.data() + vectorSize * i;
+        p.bestPosition = bestPositions_.data() + vectorSize * i;
+    }
+}
+
+template<typename Consumer>
+void ParticleSwarmPopulation::ForEach(Consumer&& consumer)
+{
+    std::for_each(
+        population_.begin(),
+        population_.end(),
+        consumer);
+}
+
+constexpr std::size_t ParticleSwarmPopulation::VectorSize() const noexcept
+{
+    return vectorSize_;
+}
+
+std::size_t ParticleSwarmPopulation::PopulationSize() const noexcept
+{
+    return population_.size();
+}
+
 template<
     typename RealT,
     typename ForwardPositionIt,
