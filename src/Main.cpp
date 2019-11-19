@@ -1,5 +1,6 @@
 #include "CS3910/Core.h"
 #include "CS3910/PSO.h"
+#include "CS3910/Simulation.h"
 #include <algorithm>
 #include <cassert>
 #include <cmath>
@@ -9,9 +10,6 @@
 #include <iostream>
 #include <string>
 #include <vector>
-
-//template<typename ForwardItA>
-//auto Error(ForwardItA )
 
 // 35 pallets per trucks
 // Trucks = pallets / 35
@@ -61,92 +59,133 @@ bool Read(
     return true;
 }
 
+class HistoricalPalletData
+{
+public:
+    explicit HistoricalPalletData(char const* fileName);
+private:
+    std::vector<double> demand_;
+    std::vector<double> dataPoints_;
+    std::size_t dataPointCount_;
+};
+
+class HyperParticleSwarmOptimisationPolicy
+{
+};
+
+class BasicParticleSwarmOptimisationPolicy
+{
+public:
+
+    explicit BasicParticleSwarmOptimisationPolicy();
+
+    void Initialise() noexcept;
+
+    void Step() noexcept;
+
+    bool Terminate() const noexcept
+    {
+        return false;
+    }
+
+    void Complete() const noexcept
+    {
+    }
+
+private:
+
+    ParticleSwarmPopulation particles_{100, 13 /* HARDCODED!!! */};
+
+    double globalBestFitness_ = std::numeric_limits<double>::infinity();
+    
+    std::vector<double> globalBestPosition_;
+
+    std::random_device rng_{};
+
+    // TODO encapsulate...
+    std::vector<double> demand_{};
+    std::vector<std::vector<double>> data_{};
+};
+
 int main()
 {
-    std::vector<double> demand{};
-    std::vector<std::vector<double>> data{};
-    std::size_t count;
+    BasicParticleSwarmOptimisationPolicy pso{};
+    Simulate(pso);
+}
 
+BasicParticleSwarmOptimisationPolicy::BasicParticleSwarmOptimisationPolicy()
+{
+    std::size_t count;
     Read(
         "sample/cwk_train.csv",
         count,
-        std::back_inserter(demand),
-        std::back_inserter(data));
+        std::back_inserter(demand_),
+        std::back_inserter(data_));
+}
 
-    ParticleSwarmPopulation population{100, count};
-    std::random_device rng{};
-
-    population.ForEach([&](auto&& p)
+void BasicParticleSwarmOptimisationPolicy::Initialise() noexcept
+{
+    auto const count = particles_.VectorSize();
+    particles_.ForEach([&](auto&& p)
     {
-        InitialiseRandomWeights(p.position, p.position + count, rng);
+        InitialiseRandomWeights(p.position, p.position + count, rng_);
         std::copy(p.position, p.position + count, p.bestPosition);
         std::fill(p.velocity, p.velocity + count, 0.0);
 
-        p.cost = EstemateCost(
-            data.begin(), 
-            data.end(), 
-            demand.begin(),
+        *p.fitness = EstemateCost(
+            data_.begin(), 
+            data_.end(), 
+            demand_.begin(),
             p.position);
 
-        p.bestCost = p.cost;
+        *p.bestFitness = *p.fitness;
     });
+}
 
-    double allTimeBest = std::numeric_limits<double>::infinity();
-
-    while(true)
-    {
-        std::vector<double> globalBestPosition;
-        auto globalBestCost = population.FindMin(
-            std::back_inserter(globalBestPosition),
-            [](auto const& a, auto const& b)
-            {
-                return a.cost < b.cost;
-            });
-
-        if(globalBestCost < allTimeBest)
+void BasicParticleSwarmOptimisationPolicy::Step() noexcept
+{
+    std::vector<double> bestPosition;
+    auto globalBestCost = particles_.FindMin(
+        std::back_inserter(bestPosition),
+        [](auto const& a, auto const& b)
         {
-            allTimeBest = globalBestCost;
-            std::cout << globalBestCost << '|';
-            for(auto&& x: globalBestPosition)
-                std::cout << ' ' << x;
-            std::cout << '\n';
-        }
-
-        population.ForEach([&](auto&& p)
-        {
-            NextPosition(
-                p.position,
-                p.position + count,
-                p.bestPosition,
-                globalBestPosition.data(),
-                p.velocity,
-                p.position,
-                rng,
-                1.0 / (2.0 * std::log(2)),
-                1.0 / 2.0 + std::log(2),
-                1.0 / 2.0 + std::log(2));
-
-            p.cost = EstemateCost(
-                data.begin(),
-                data.end(),
-                demand.begin(),
-                p.position);
-
-            if (p.cost < p.bestCost)
-            {
-                p.bestCost = p.cost;
-                std::copy(p.position, p.position + count, p.bestPosition);
-            }
-        });
-    };
-
-    population.ForEach([&](auto&& p)
-    {
-        std::for_each(p.position, p.position + count, [](auto& x)
-        {
-            std::cout << ' ' << x; 
+            return *a.fitness < *b.fitness;
         });
 
+    if(globalBestCost < globalBestFitness_)
+    {
+        globalBestFitness_ = globalBestCost;
+        std::cout << globalBestCost << '|';
+        for(auto&& x: bestPosition)
+            std::cout << ' ' << x;
         std::cout << '\n';
+
+        globalBestPosition_ =  std::move(bestPosition);
+    }
+
+    auto const count = particles_.VectorSize();
+    particles_.ForEach([&](auto&& p)
+    {
+        NextPosition(
+            p.position,
+            p.position + count,
+            p.bestPosition,
+            globalBestPosition_.data(),
+            p.velocity,
+            p.position,
+            rng_,
+            1.0 / (2.0 * std::log(2)),
+            1.0 / 2.0 + std::log(2),
+            1.0 / 2.0 + std::log(2));
+        *p.fitness = EstemateCost(
+            data_.begin(),
+            data_.end(),
+            demand_.begin(),
+            p.position);
+        if (*p.fitness < *p.bestFitness)
+        {
+            *p.bestFitness = *p.fitness;
+            std::copy(p.position, p.position + count, p.bestPosition);
+        }
     });
 }

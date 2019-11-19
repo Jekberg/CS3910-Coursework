@@ -11,8 +11,8 @@ public:
         double* position;
         double* velocity;
         double* bestPosition;
-        double cost;
-        double bestCost;
+        double* fitness;
+        double* bestFitness;
     };
 
     explicit ParticleSwarmPopulation(
@@ -30,7 +30,7 @@ public:
             population_.end(),
             compare);
         std::copy(it->position, it->position + vectorSize_, outIt);
-        return it->cost;
+        return *it->fitness;
     }
 
     constexpr std::size_t VectorSize() const noexcept;
@@ -41,7 +41,10 @@ private:
     std::vector<double> positions_;
     std::vector<double> velocities_;
     std::vector<double> bestPositions_;
+    std::vector<double> fitness_;
+    std::vector<double> bestFitness_;
     std::vector<Candidate> population_;
+    std::size_t populationSize_;
     std::size_t vectorSize_;
 };
 
@@ -51,7 +54,10 @@ ParticleSwarmPopulation::ParticleSwarmPopulation(
     : positions_(populationSize * vectorSize)
     , velocities_(populationSize * vectorSize)
     , bestPositions_(populationSize * vectorSize)
+    , fitness_(populationSize)
+    , bestFitness_(populationSize)
     , population_(populationSize)
+    , populationSize_{populationSize}
     , vectorSize_{ vectorSize }
 {
 
@@ -61,6 +67,8 @@ ParticleSwarmPopulation::ParticleSwarmPopulation(
         p.position = positions_.data() + vectorSize * i;
         p.velocity = velocities_.data() + vectorSize * i;
         p.bestPosition = bestPositions_.data() + vectorSize * i;
+        p.fitness = fitness_.data() + i;
+        p.bestFitness = bestFitness_.data() + i;
     }
 }
 
