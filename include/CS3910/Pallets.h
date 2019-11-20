@@ -12,11 +12,21 @@ class PalletData
 public:
     explicit PalletData(char const* fileName);
 
-    double const* BeginDemand() const;
-    double const* EndDemand() const;
+    inline std::size_t RowCount() const noexcept;
 
-    double const* BeginRowData(std::size_t row) const;
-    double const* EndRowData(std::size_t row) const;
+    inline std::size_t DataCount() const noexcept;
+
+    inline double const* BeginDemand() const noexcept;
+
+    inline double const* EndDemand() const noexcept;
+
+    inline double const* BeginData() const noexcept;
+
+    inline double const* EndData() const noexcept;
+
+    inline double const* BeginRowData(std::size_t row) const noexcept;
+
+    inline double const* EndRowData(std::size_t row) const noexcept;
 
 private:
     std::vector<double> demand_{};
@@ -54,9 +64,9 @@ private:
             for(++i; i < line.end(); ++i)
             {
                 auto it = std::find(i, line.end(), ',');
+                temp.push_back(std::stod(std::string{ i, it }));
                 if(it == line.end())
                     break;
-                temp.push_back(std::stod(std::string{ i, it }));
                 i = it;
             }
 
@@ -82,8 +92,48 @@ PalletData::PalletData(char const* fileName)
         throw 0;
 }
 
-double Estemate(PalletData& data)
+std::size_t PalletData::RowCount() const noexcept
 {
+    return demand_.size();
+}
+
+std::size_t PalletData::DataCount() const noexcept
+{
+    return dataPointCount_;
+}
+
+double const* PalletData::BeginDemand() const noexcept
+{
+    return demand_.data();
+}
+
+double const* PalletData::EndDemand() const noexcept
+{
+    return demand_.data() + demand_.size();
+}
+
+double const* PalletData::BeginData() const noexcept
+{
+    return dataPoints_.data();
+}
+
+double const* PalletData::EndData() const noexcept
+{
+    return dataPoints_.data() + dataPoints_.size();
+}
+
+double const* PalletData::BeginRowData(std::size_t row)
+    const noexcept
+{
+    assert(row < demand_.size() && "Out of bounds row");
+    return dataPoints_.data() + row * dataPointCount_;
+}
+
+double const* PalletData::EndRowData(std::size_t row)
+    const noexcept
+{
+    assert(row < demand_.size() && "Out of bounds row");
+    return dataPoints_.data() + row * dataPointCount_ + dataPointCount_;
 }
 
 #endif // !CS3910__PALLETS_H_

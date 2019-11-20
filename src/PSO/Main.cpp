@@ -1,12 +1,12 @@
-#include "CS3910/Core.h"
 #include "CS3910/Pallets.h"
 #include "CS3910/PSO.h"
 #include "CS3910/Simulation.h"
 #include <algorithm>
 #include <cassert>
-#include <cmath>
 #include <cstddef>
+#include <execution>
 #include <fstream>
+#include <numeric>
 #include <iterator>
 #include <iostream>
 #include <string>
@@ -15,69 +15,19 @@
 // 35 pallets per trucks
 // Trucks = pallets / 35
 
-template<
-    typename OutputDemandIt,
-    typename OutputDataIt>
-bool Read(
-    char const* fileName,
-    std::size_t& outMaxColumnCount,
-    OutputDemandIt outDemandIt,
-    OutputDataIt outDataIt)
-{
-    assert(fileName != nullptr && "The fileName must not be the nullptr");
-    std::ifstream file{};
-
-    file.open(fileName);
-    if(!file.is_open())
-        return false;
-
-    std::string line;
-    outMaxColumnCount = 0;
-    for(;file >> line; ++outDemandIt, ++outDataIt)
-    {
-        auto i{std::find(line.begin(), line.end(), ',')};
-
-        if(i == line.end())
-            return false;
-
-        *outDemandIt = std::stod(std::string{line.begin(), i});
-
-        std::vector<double> temp{};
-        for(++i; i < line.end(); ++i)
-        {
-            auto it = std::find(i, line.end(), ',');
-            if(it == line.end())
-                break;
-            temp.push_back(std::stod(std::string{ i, it }));
-            i = it;
-        }
-
-        if(outMaxColumnCount < temp.size())
-            outMaxColumnCount = temp.size();
-        *outDataIt = std::move(temp);
-    }
-
-    return true;
-}
-
-class HyperParticleSwarmOptimisationPolicy
-{
-};
-
 class BasicParticleSwarmOptimisationPolicy
 {
 public:
 
-    explicit BasicParticleSwarmOptimisationPolicy();
+    explicit BasicParticleSwarmOptimisationPolicy(
+        PalletData historicalData,
+        std::size_t populationSize);
 
     void Initialise() noexcept;
 
     void Step() noexcept;
 
-    bool Terminate() const noexcept
-    {
-        return false;
-    }
+    bool Terminate() noexcept;
 
     void Complete() const noexcept
     {
@@ -85,25 +35,44 @@ public:
 
 private:
 
-    ParticleSwarmPopulation particles_{100, 13 /* HARDCODED!!! */};
+    Particles particles_;
+
+    PalletData historicalData_;
 
     double globalBestFitness_ = std::numeric_limits<double>::infinity();
     
     std::vector<double> globalBestPosition_;
 
+    std::size_t iteration_{1000};
+
     std::random_device rng_{};
 
-    // TODO encapsulate...
-    HistoricalPalletData data {"sample/cwk_train.csv"};
 };
+
+template<typename ForwardIt>
+double Estemate(PalletData& data, ForwardIt weightIt);
+
+template<
+    typename OutputIt,
+    typename RngT>
+void InitialiseRandomWeights(
+    OutputIt first,
+    OutputIt last,
+    RngT& rng);
 
 int main()
 {
-    BasicParticleSwarmOptimisationPolicy pso{};
+    BasicParticleSwarmOptimisationPolicy pso{
+        PalletData{"sample/cwk_train.csv"},
+        100};
     Simulate(pso);
 }
 
-BasicParticleSwarmOptimisationPolicy::BasicParticleSwarmOptimisationPolicy()
+BasicParticleSwarmOptimisationPolicy::BasicParticleSwarmOptimisationPolicy(
+    PalletData historicalData,
+    std::size_t populationSize)
+    : particles_{populationSize, historicalData.DataCount()}
+    , historicalData_{std::move(historicalData)}
 {
 }
 
@@ -116,12 +85,7 @@ void BasicParticleSwarmOptimisationPolicy::Initialise() noexcept
         std::copy(p.position, p.position + count, p.bestPosition);
         std::fill(p.velocity, p.velocity + count, 0.0);
 
-        *p.fitness = EstemateCost(
-            data_.begin(), 
-            data_.end(), 
-            demand_.begin(),
-            p.position);
-
+        *p.fitness = Estemate(historicalData_, p.position);
         *p.bestFitness = *p.fitness;
     });
 }
@@ -161,15 +125,57 @@ void BasicParticleSwarmOptimisationPolicy::Step() noexcept
             1.0 / (2.0 * std::log(2)),
             1.0 / 2.0 + std::log(2),
             1.0 / 2.0 + std::log(2));
-        *p.fitness = EstemateCost(
-            data_.begin(),
-            data_.end(),
-            demand_.begin(),
-            p.position);
+        *p.fitness = Estemate(historicalData_, p.position);
         if (*p.fitness < *p.bestFitness)
         {
             *p.bestFitness = *p.fitness;
             std::copy(p.position, p.position + count, p.bestPosition);
         }
     });
+}
+
+bool BasicParticleSwarmOptimisationPolicy::Terminate() noexcept
+{
+    return iteration_-- < 1;
+}
+
+template<typename ForwardIt>
+double Estemate(PalletData& data, ForwardIt weightIt)
+{
+    std::vector<double> estemates{};
+    for (std::size_t i{}; i != data.RowCount(); ++i)
+        estemates.push_back(std::transform_reduce(
+            std::execution::seq,
+            data.BeginRowData(i),
+            data.EndRowData(i),
+            weightIt,
+            double{},
+            std::plus<double>{},
+            std::multiplies<double>{}));
+
+    auto const Total = std::transform_reduce(
+        std::execution::seq,
+        estemates.cbegin(),
+        estemates.cend(),
+        data.BeginDemand(),
+        0.0,
+        std::plus<double>{},
+        [](auto a, auto b) noexcept {return std::abs(a - b); });
+
+    return Total / data.RowCount();
+}
+
+template<
+    typename OutputIt,
+    typename RngT>
+void InitialiseRandomWeights(
+    OutputIt first,
+    OutputIt last,
+    RngT& rng)
+{
+    std::uniform_real_distribution<double> d{ 0.0, 1.0 };
+    std::generate(
+        first,
+        last,
+        [&]() { return d(rng); });
 }

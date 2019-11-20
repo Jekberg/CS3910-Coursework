@@ -3,7 +3,7 @@
 
 #include <random>
 
-class ParticleSwarmPopulation
+class Particles
 {
 public:
     struct Candidate
@@ -15,7 +15,7 @@ public:
         double* bestFitness;
     };
 
-    explicit ParticleSwarmPopulation(
+    explicit Particles(
         std::size_t populationSize,
         std::size_t count);
 
@@ -39,16 +39,23 @@ public:
 
 private:
     std::vector<double> positions_;
+
     std::vector<double> velocities_;
+
     std::vector<double> bestPositions_;
+
     std::vector<double> fitness_;
+
     std::vector<double> bestFitness_;
+
     std::vector<Candidate> population_;
+
     std::size_t populationSize_;
+
     std::size_t vectorSize_;
 };
 
-ParticleSwarmPopulation::ParticleSwarmPopulation(
+Particles::Particles(
     std::size_t populationSize,
     std::size_t vectorSize)
     : positions_(populationSize * vectorSize)
@@ -73,7 +80,7 @@ ParticleSwarmPopulation::ParticleSwarmPopulation(
 }
 
 template<typename Consumer>
-void ParticleSwarmPopulation::ForEach(Consumer&& consumer)
+void Particles::ForEach(Consumer&& consumer)
 {
     std::for_each(
         population_.begin(),
@@ -81,12 +88,12 @@ void ParticleSwarmPopulation::ForEach(Consumer&& consumer)
         consumer);
 }
 
-constexpr std::size_t ParticleSwarmPopulation::VectorSize() const noexcept
+constexpr std::size_t Particles::VectorSize() const noexcept
 {
     return vectorSize_;
 }
 
-std::size_t ParticleSwarmPopulation::PopulationSize() const noexcept
+std::size_t Particles::PopulationSize() const noexcept
 {
     return population_.size();
 }
