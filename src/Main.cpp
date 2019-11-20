@@ -1,4 +1,5 @@
 #include "CS3910/Core.h"
+#include "CS3910/Pallets.h"
 #include "CS3910/PSO.h"
 #include "CS3910/Simulation.h"
 #include <algorithm>
@@ -59,16 +60,6 @@ bool Read(
     return true;
 }
 
-class HistoricalPalletData
-{
-public:
-    explicit HistoricalPalletData(char const* fileName);
-private:
-    std::vector<double> demand_;
-    std::vector<double> dataPoints_;
-    std::size_t dataPointCount_;
-};
-
 class HyperParticleSwarmOptimisationPolicy
 {
 };
@@ -103,8 +94,7 @@ private:
     std::random_device rng_{};
 
     // TODO encapsulate...
-    std::vector<double> demand_{};
-    std::vector<std::vector<double>> data_{};
+    HistoricalPalletData data {"sample/cwk_train.csv"};
 };
 
 int main()
@@ -115,12 +105,6 @@ int main()
 
 BasicParticleSwarmOptimisationPolicy::BasicParticleSwarmOptimisationPolicy()
 {
-    std::size_t count;
-    Read(
-        "sample/cwk_train.csv",
-        count,
-        std::back_inserter(demand_),
-        std::back_inserter(data_));
 }
 
 void BasicParticleSwarmOptimisationPolicy::Initialise() noexcept
