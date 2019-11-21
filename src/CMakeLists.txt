@@ -1,6 +1,6 @@
 add_executable(
     "PSO-EXE"
-    "PSO/Main.cpp")
+    "PSO-Main.cpp")
 
 target_include_directories(
     "PSO-EXE"
@@ -14,7 +14,7 @@ target_link_libraries(
 
 add_executable(
     "GP-EXE"
-    "GP/Main.cpp")
+    "GP-Main.cpp")
 
 target_include_directories(
     "GP-EXE"

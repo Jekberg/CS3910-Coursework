@@ -1,6 +1,7 @@
 #ifndef CS3910__GP_H_
 #define CS3910__GP_H_
 
+#include <cassert>
 #include <cstdint>
 #include <cstring>
 #include <ostream>
@@ -20,6 +21,7 @@ namespace internal
     template<typename ForwardIt>
     ForwardIt EndOfExpr(ForwardIt first, ForwardIt last)
     {
+        assert(first != last && "Cannot find the end of an empty Expr");
         switch (*(first++))
         {
         case OpCode::LoadConst:
@@ -39,28 +41,25 @@ namespace internal
     template<typename ForwardIt, typename RandomIt>
     double EvalExpr(ForwardIt first, ForwardIt last, RandomIt argIt)
     {
+        assert(first != last && "Cannot evaluate an empty Expr");
         switch (*(first++))
         {
         case OpCode::LoadConst:
             {
-                double bits;
-                std::memcpy(&bits, &*first, sizeof(double));
-                return bits;
+                double temp;
+                std::memcpy(&temp, &*first, 8);
+                return temp;
             }
         case OpCode::LoadArg:
-                return argIt[*first];
+            return argIt[*first];
         case OpCode::Add:
             {
                 auto i = EndOfExpr(first, last);
-                if (i == last)
-                    return 0.0;
                 return EvalExpr(first, i, argIt) + EvalExpr(i, last, argIt);
             }
         case OpCode::Mul:
             {
                 auto i = EndOfExpr(first, last);
-                if (i == last)
-                    return 0.0;
                 return EvalExpr(first, i, argIt) * EvalExpr(i, last, argIt);
             }
         }
@@ -153,6 +152,46 @@ namespace internal
             return RandomExpr(outIt, rng, argCount);
         }
     }
+
+    template<typename ForwardIt>
+    std::size_t CountExpr(ForwardIt first, ForwardIt last)
+    {
+        switch (*(first++))
+        {
+        case OpCode::LoadConst:
+        case OpCode::LoadArg:
+            return 1;
+        case OpCode::Add:
+        case OpCode::Mul:
+            auto i = EndOfExpr(first, last);
+            return CountExpr(first, i) + CountExpr(i, last) + 1;
+        }
+
+        return 0;
+    }
+
+    template<typename ForwardIt>
+    ForwardIt FindExpr(ForwardIt first, ForwardIt last, std::size_t id)
+    {
+        if(id-- == 0)
+            return first;
+        
+        switch (*(first++))
+        {
+        case OpCode::LoadConst:
+        case OpCode::LoadArg:
+            return last;
+        case OpCode::Add:
+        case OpCode::Mul:
+            auto i = EndOfExpr(first, last);
+            auto const Count = CountExpr(first, i);
+            return id < Count
+                ? FindExpr(first, i, id)
+                : FindExpr(i, last, id - Count);
+        }
+
+        return last;
+    }
 }
 
 class Expression final
@@ -172,8 +211,20 @@ public:
 
     std::ostream& Print(std::ostream& outs) const;
 
+    std::size_t Count() const noexcept;
+
+    Expression SubExpr(std::size_t id);
+
+    bool Replace(std::size_t id, Expression const& expr);
+
 private:
     std::vector<std::uint64_t> expr_{};
+
+    template<typename ForwardIt>
+    explicit Expression(ForwardIt first, ForwardIt last)
+        : expr_{first, last}
+    {
+    }
 
     explicit Expression(
         internal::OpCode op,
@@ -228,6 +279,21 @@ template<typename RandomIt>
 double Expression::Eval(RandomIt argIt) const
 {
     return internal::EvalExpr(expr_.begin(), expr_.end(), argIt);
+}
+
+Expression Expression::SubExpr(std::size_t id)
+{
+    auto i = internal::FindExpr(expr_.begin(), expr_.end(), id);
+    return Expression{
+        i,
+        i != expr_.end()
+            ? internal::EndOfExpr(i, expr_.end())
+            : expr_.end()};
+}
+
+std::size_t Expression::Count() const noexcept
+{
+    return internal::CountExpr(expr_.begin(), expr_.end());
 }
 
 std::ostream& Expression::Print(std::ostream& outs) const
