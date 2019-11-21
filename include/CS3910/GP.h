@@ -119,11 +119,11 @@ namespace internal
     {
         std::uniform_real_distribution<double> d{0.0, 1.0};
         auto const X = d(rng);
-        if(X < 0.30)
+        if(X < 0.10)
         {
             *outIt = OpCode::LoadConst;
             ++outIt;
-            auto const Val = std::uniform_real_distribution<double>{-100, 100}(rng);
+            auto const Val = std::uniform_real_distribution<double>{-1, 1}(rng);
             std::size_t temp;
             std::memcpy(&temp, &Val, 8);
             *outIt = temp;
@@ -194,17 +194,20 @@ namespace internal
     }
 }
 
-class Expression final
+class Expr final
 {
-    friend Expression Add(Expression const& lhs, Expression const& rhs);
-    friend Expression Add(Expression&& lhs, Expression&& rhs);
-    friend Expression Mul(Expression const& lhs, Expression const& rhs);
-    friend Expression Mul(Expression&& lhs, Expression&& rhs);
+    friend Expr Add(Expr const& lhs, Expr const& rhs);
+    friend Expr Add(Expr&& lhs, Expr&& rhs);
+    friend Expr Mul(Expr const& lhs, Expr const& rhs);
+    friend Expr Mul(Expr&& lhs, Expr&& rhs);
 public:
-    explicit Expression(double constVal);
+    explicit Expr(double constVal);
+
 
     template<typename RngT>
-    explicit Expression(RngT& rng, std::size_t argCount);
+    explicit Expr(RngT& rng, std::size_t argCount);
+
+    bool Replace(std::size_t id, Expr const& expr);
 
     template<typename RandomIt>
     double Eval(RandomIt argIt) const;
@@ -213,23 +216,22 @@ public:
 
     std::size_t Count() const noexcept;
 
-    Expression SubExpr(std::size_t id);
+    Expr SubExpr(std::size_t id) const;
 
-    bool Replace(std::size_t id, Expression const& expr);
 
 private:
     std::vector<std::uint64_t> expr_{};
 
     template<typename ForwardIt>
-    explicit Expression(ForwardIt first, ForwardIt last)
+    explicit Expr(ForwardIt first, ForwardIt last)
         : expr_{first, last}
     {
     }
 
-    explicit Expression(
+    explicit Expr(
         internal::OpCode op,
-        Expression const& lhs,
-        Expression const& rhs)
+        Expr const& lhs,
+        Expr const& rhs)
     {
         expr_.reserve(lhs.expr_.size() + rhs.expr_.size() + 1);
         expr_.push_back(op);
@@ -243,10 +245,10 @@ private:
             std::back_inserter(expr_));
     }
 
-    explicit Expression(
+    explicit Expr(
         internal::OpCode op,
-        Expression&& lhs,
-        Expression&& rhs)
+        Expr&& lhs,
+        Expr&& rhs)
     {
         expr_.reserve(lhs.expr_.size() + rhs.expr_.size() + 1);
         expr_.push_back(op);
@@ -261,7 +263,7 @@ private:
     }
 };
 
-Expression::Expression(double constVal)
+Expr::Expr(double constVal)
 {
     expr_.push_back(internal::OpCode::LoadConst);
     std::uint64_t temp;
@@ -270,58 +272,71 @@ Expression::Expression(double constVal)
 }
 
 template<typename RngT>
-Expression::Expression(RngT& rng, std::size_t argCount)
+Expr::Expr(RngT& rng, std::size_t argCount)
 {
     internal::RandomExpr(std::back_inserter(expr_), rng, argCount);
 }
 
+bool Expr::Replace(std::size_t id, Expr const& expr)
+{
+    auto i = internal::FindExpr(expr_.begin(), expr_.end(), id);
+    if(i == expr_.begin())
+        return false;
+    i = expr_.erase(i, internal::EndOfExpr(i, expr_.end()));
+    std::copy(
+        expr.expr_.cbegin(),
+        expr.expr_.cend(),
+        std::inserter(expr_, i));
+    return true;
+}
+
 template<typename RandomIt>
-double Expression::Eval(RandomIt argIt) const
+double Expr::Eval(RandomIt argIt) const
 {
     return internal::EvalExpr(expr_.begin(), expr_.end(), argIt);
 }
 
-Expression Expression::SubExpr(std::size_t id)
+Expr Expr::SubExpr(std::size_t id) const
 {
     auto i = internal::FindExpr(expr_.begin(), expr_.end(), id);
-    return Expression{
+    return Expr{
         i,
         i != expr_.end()
             ? internal::EndOfExpr(i, expr_.end())
             : expr_.end()};
 }
 
-std::size_t Expression::Count() const noexcept
+std::size_t Expr::Count() const noexcept
 {
     return internal::CountExpr(expr_.begin(), expr_.end());
 }
 
-std::ostream& Expression::Print(std::ostream& outs) const
+std::ostream& Expr::Print(std::ostream& outs) const
 {
     return internal::PrintExpr(expr_.begin(), expr_.end(), outs);
 }
 
-Expression Add(Expression const& lhs, Expression const& rhs)
+Expr Add(Expr const& lhs, Expr const& rhs)
 {
-    return Expression(internal::OpCode::Add, lhs, rhs);
+    return Expr(internal::OpCode::Add, lhs, rhs);
 }
 
-Expression Add(Expression&& lhs, Expression&& rhs)
+Expr Add(Expr&& lhs, Expr&& rhs)
 {
-    return Expression(internal::OpCode::Add, lhs, rhs);
+    return Expr(internal::OpCode::Add, lhs, rhs);
 }
 
-Expression Mul(Expression const& lhs, Expression const& rhs)
+Expr Mul(Expr const& lhs, Expr const& rhs)
 {
-    return Expression(internal::OpCode::Mul, lhs, rhs);
+    return Expr(internal::OpCode::Mul, lhs, rhs);
 }
 
-Expression Mul(Expression&& lhs, Expression&& rhs)
+Expr Mul(Expr&& lhs, Expr&& rhs)
 {
-    return Expression(internal::OpCode::Mul, lhs, rhs);
+    return Expr(internal::OpCode::Mul, lhs, rhs);
 }
 
-std::ostream& operator<<(std::ostream& outs, Expression const& expr)
+std::ostream& operator<<(std::ostream& outs, Expr const& expr)
 {
     return expr.Print(outs);
 }

@@ -5,6 +5,7 @@
 #include <cassert>
 #include <fstream>
 #include <iterator>
+#include <string>
 #include <vector>
 
 class PalletData
