@@ -1,83 +1,39 @@
-#include <cstdint>
+#include "CS3910/Pallets.h"
+#include "CS3910/GP.h"
+#include <array>
+#include <execution>
 #include <iostream>
-#include <vector>
 
-
-enum OpCode: std::uint64_t
-{
-    LoadConst,
-    Add,
-    Mul
-};
-
-
-template<typename ForwardIt>
-ForwardIt FindEndOfExpr(ForwardIt first, ForwardIt last)
-{
-    // WIP
-    switch (*(first++))
-    {
-    case OpCode::LoadConst:
-        return ++first;
-    case OpCode::Add:
-    case OpCode::Mul:
-        auto i = FindEndOfExpr(first, last);
-        i = FindEndOfExpr(i, last);
-        return i;
-    }
-}
-
-template<typename ForwardIt>
-double EvalExpr(ForwardIt first, ForwardIt last) 
-{
-    switch (*(first++))
-    {
-    case OpCode::LoadConst:
-        double bits;
-        std::memcpy(&bits, &*first, sizeof(double));
-        return bits;
-    case OpCode::Add:
-        {
-            auto i = FindEndOfExpr(first, last);
-            if (i == last)
-                return 0.0;
-            return EvalExpr(first, i) + EvalExpr(i, last);
-        }
-    case OpCode::Mul:
-        {
-            auto i = FindEndOfExpr(first, last);
-            if (i == last)
-                return 0.0;
-            return EvalExpr(first, i) + EvalExpr(i, last);
-        }
-    }
-}
-
-std::vector<std::uint64_t> code{};
-
-template<typename OutputIt>
-OutputIt InsertLoadConst(OutputIt outIt, double constant)
-{
-    *outIt = OpCode::LoadConst;
-    ++outIt;
-
-    std::uint64_t bits;
-    std::memcpy(&bits, &constant, sizeof(std::uint64_t));
-    
-    *outIt = bits;
-    return ++outIt;
-}
+double Estemate(PalletData& data, Expression const& expr);
 
 int main()
 {
-    code.push_back(Add);
-    auto i = std::back_inserter(code);
-    i = InsertLoadConst(i, 100);
-    i = InsertLoadConst(i, 200);
+    PalletData data{"sample/cwk_train.csv"};
+    std::random_device rng{};
 
-    std::cout << code.size() << '\n';
+    for(std::size_t c{}; c < 1000; ++c)
+    {
+        Expression x{rng, data.DataCount()};
 
-    auto i1 = FindEndOfExpr(code.begin(), code.end());
-    std::cout << (i1 == code.end()) << '\n';
-    std::cout << EvalExpr(code.begin(), code.end());
+        std::cout << Estemate(data, x) << " <-- " << x << '\n';
+    }
+
+}
+
+double Estemate(PalletData& data, Expression const& expr)
+{
+    std::vector<double> estemates{};
+    for(std::size_t i{}; i != data.RowCount(); ++i)
+        estemates.push_back(expr.Eval(data.BeginRowData(i)));
+
+    auto const Total = std::transform_reduce(
+        std::execution::seq,
+        estemates.cbegin(),
+        estemates.cend(),
+        data.BeginDemand(),
+        0.0,
+        std::plus<double>{},
+        [](auto a, auto b) noexcept {return std::abs(a - b); });
+
+    return Total / data.RowCount();
 }
