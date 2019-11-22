@@ -74,8 +74,7 @@ namespace internal
         ForwardIt last,
         std::ostream& outs)
     {
-        auto const Op = *(first++);
-        switch (Op)
+        switch (*(first++))
         {
         case OpCode::LoadConst:
             {
@@ -196,14 +195,11 @@ namespace internal
 
 class Expr final
 {
-    friend Expr Add(Expr const& lhs, Expr const& rhs);
-    friend Expr Add(Expr&& lhs, Expr&& rhs);
-    friend Expr Mul(Expr const& lhs, Expr const& rhs);
-    friend Expr Mul(Expr&& lhs, Expr&& rhs);
+    friend Expr Const(double constVal);
+    friend Expr Arg(std::uint64_t argId);
+    friend Expr operator+(Expr const& lhs, Expr const& rhs);
+    friend Expr operator*(Expr const& lhs, Expr const& rhs);
 public:
-    explicit Expr(double constVal);
-
-
     template<typename RngT>
     explicit Expr(RngT& rng, std::size_t argCount);
 
@@ -228,6 +224,20 @@ private:
     {
     }
 
+    explicit Expr(double constVal)
+    {
+        expr_.push_back(internal::OpCode::LoadConst);
+        std::uint64_t temp;
+        std::memcpy(&temp, &constVal, 8);
+        expr_.push_back(temp);
+    }
+
+    explicit Expr(std::uint64_t argId)
+    {
+        expr_.push_back(internal::OpCode::LoadArg);
+        expr_.push_back(argId);
+    }
+
     explicit Expr(
         internal::OpCode op,
         Expr const& lhs,
@@ -244,32 +254,7 @@ private:
             rhs.expr_.end(),
             std::back_inserter(expr_));
     }
-
-    explicit Expr(
-        internal::OpCode op,
-        Expr&& lhs,
-        Expr&& rhs)
-    {
-        expr_.reserve(lhs.expr_.size() + rhs.expr_.size() + 1);
-        expr_.push_back(op);
-        std::copy(
-            lhs.expr_.begin(),
-            lhs.expr_.end(),
-            std::back_inserter(expr_));
-        std::copy(
-            rhs.expr_.begin(),
-            rhs.expr_.end(),
-            std::back_inserter(expr_));
-    }
 };
-
-Expr::Expr(double constVal)
-{
-    expr_.push_back(internal::OpCode::LoadConst);
-    std::uint64_t temp;
-    std::memcpy(&temp, &constVal, 8);
-    expr_.push_back(temp);
-}
 
 template<typename RngT>
 Expr::Expr(RngT& rng, std::size_t argCount)
@@ -316,22 +301,22 @@ std::ostream& Expr::Print(std::ostream& outs) const
     return internal::PrintExpr(expr_.begin(), expr_.end(), outs);
 }
 
-Expr Add(Expr const& lhs, Expr const& rhs)
+Expr Const(double constVal)
+{
+    return Expr{constVal};
+}
+
+Expr Arg(std::uint64_t argId)
+{
+    return Expr{argId};
+}
+
+Expr operator+(Expr const& lhs, Expr const& rhs)
 {
     return Expr(internal::OpCode::Add, lhs, rhs);
 }
 
-Expr Add(Expr&& lhs, Expr&& rhs)
-{
-    return Expr(internal::OpCode::Add, lhs, rhs);
-}
-
-Expr Mul(Expr const& lhs, Expr const& rhs)
-{
-    return Expr(internal::OpCode::Mul, lhs, rhs);
-}
-
-Expr Mul(Expr&& lhs, Expr&& rhs)
+Expr operator*(Expr const& lhs, Expr const& rhs)
 {
     return Expr(internal::OpCode::Mul, lhs, rhs);
 }

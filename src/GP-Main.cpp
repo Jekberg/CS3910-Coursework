@@ -53,60 +53,60 @@ RandomIt SampleGroup(RandomIt first, RandomIt last, std::size_t k, RngT& rng)
     return first + k;
 }
 
-template<typename RandomIt, typename RngT>
-std::tuple<Candidate, Candidate, RandomIt> SelectParents(
-    RandomIt first,
-    RandomIt last,
-    RngT& rng)
-{
-    auto const K = 2;
-    if (first + K != last)
-    {
-        // Find the first parent
-        auto it = SampleGroup(first, last, params_.k, rng_);
-        auto minIt = std::min_element(
-            first,
-            it,
-            [](auto& a, auto& b) { return a.cost < b.cost; });
-        if(first != minIt)
-            std::swap(first[0], *minIt);
+//template<typename RandomIt, typename RngT>
+//std::tuple<Candidate, Candidate, RandomIt> SelectParents(
+//    RandomIt first,
+//    RandomIt last,
+//    RngT& rng)
+//{
+//    auto const K = 2;
+//    if (first + K != last)
+//    {
+//        // Find the first parent
+//        auto it = SampleGroup(first, last, params_.k, rng_);
+//        auto minIt = std::min_element(
+//            first,
+//            it,
+//            [](auto& a, auto& b) { return a.cost < b.cost; });
+//        if(first != minIt)
+//            std::swap(first[0], *minIt);
+//
+//        auto& parentA = first[0];
+//
+//        // Find the second parent
+//        it = SampleGroup(first + 1, last, params_.k, rng_);
+//        minIt = std::min_element(
+//            first + 1,
+//            it,
+//            [](auto& a, auto& b)
+//            {
+//                return a.cost < b.cost;
+//            });
+//        if (first + 1 != minIt)
+//            std::swap(first[1], *minIt);
+//    }
+//
+//    return {first[0], first[1], first + 2};
+//}
 
-        auto& parentA = first[0];
-
-        // Find the second parent
-        it = SampleGroup(first + 1, last, params_.k, rng_);
-        minIt = std::min_element(
-            first + 1,
-            it,
-            [](auto& a, auto& b)
-            {
-                return a.cost < b.cost;
-            });
-        if (first + 1 != minIt)
-            std::swap(first[1], *minIt);
-    }
-
-    return {first[0], first[1], first + 2};
-}
-
-template<typename RandomIt>
-void SelectNext(
-    RandomIt first,
-    RandomIt last)
-{
-    for (auto i = population_.get(); i != population_.get() + params_.eliteSize; ++i)
-    {
-        auto it = Roulette(
-            i,
-            PopulationEnd,
-            rng_,
-            [](auto& path) {return 1 / path.cost; });
-        if(i != it)
-            std::swap(*i, *it);
-    }
-
-    MoveRandom(first, last, population_.get() + params_.eliteSize, PopulationEnd, rng_);
-}
+//template<typename RandomIt>
+//void SelectNext(
+//    RandomIt first,
+//    RandomIt last)
+//{
+//    for (auto i = population_.get(); i != population_.get() + params_.eliteSize; ++i)
+//    {
+//        auto it = Roulette(
+//            i,
+//            PopulationEnd,
+//            rng_,
+//            [](auto& path) {return 1 / path.cost; });
+//        if(i != it)
+//            std::swap(*i, *it);
+//    }
+//
+//    MoveRandom(first, last, population_.get() + params_.eliteSize, PopulationEnd, rng_);
+//}
 
 template<typename ForwardIt, typename RngT, typename F>
 ForwardIt Roulette(ForwardIt first, ForwardIt last, RngT& rng, F&& f)
@@ -146,6 +146,50 @@ void MoveRandom(
     }
 }
 
+template<typename RngT>
+Expr GenerateExpr(RngT& rng)
+{
+    std::uniform_real_distribution<> d{0, 1};
+    auto p = d(rng);
+    if(p < 0.6)
+        return Const(d(rng));
+    else if(p < 0.8)
+        return GenerateExpr(rng) + GenerateExpr(rng);
+    else
+        return GenerateExpr(rng) * GenerateExpr(rng);
+}
+
+template<typename RngT>
+Expr GenerateExpr(
+    RngT& rng,
+    std::size_t firstArgId,
+    std::size_t lastArgId)
+{
+
+    if(firstArgId == lastArgId)
+        return GenerateExpr(rng);
+    else if(firstArgId + 1 == lastArgId)
+    {
+        std::uniform_real_distribution<> d{0, 1};
+        auto p = d(rng);
+        auto lhs = GenerateExpr(rng);
+        auto rhs = Arg(firstArgId);
+        return p < 0.75
+            ? lhs + rhs
+            : lhs * rhs;
+    }
+    else
+    {
+        std::uniform_real_distribution<> d{0, 1};
+        auto p = d(rng);
+        auto split = firstArgId + (lastArgId - firstArgId) / 2;
+        auto lhs = GenerateExpr(rng, firstArgId, split);
+        auto rhs = GenerateExpr(rng, split, lastArgId);
+        return p < 0.75
+            ? lhs + rhs
+            : lhs * rhs;
+    }
+}
 void S()
 {
     double best = std::numeric_limits<double>::infinity();
@@ -155,10 +199,10 @@ void S()
     std::vector<Candidate> population{};
     std::generate_n(
         std::back_inserter(population),
-        1000,
+        100,
         [&]()
         {
-            Candidate c{ Expr{rng, data.DataCount()} , 0.0};
+            Candidate c{ GenerateExpr(rng, 0, data.DataCount()) , 0.0};
             c.fitness = Estemate(data, c.function);
             return c;
         });
@@ -170,21 +214,38 @@ void S()
     //        << " <-- " << c.function << '\n';
 
     auto const Elite = population.size() / 2;
-    for (std::size_t count{};; ++count)
+    for (std::size_t count{}; count != 10000; ++count)
     {
         auto const K = 2;
         std::vector<Candidate> intermidiate{};
         // Select & Crossover
         for (auto i{ population.begin() }; i != population.end();)
         {
-            if(std::distance(i, population.end()) < 2)
+            if(std::distance(i, population.end()) <= K)
                 break;
+            
+            // Parent A...
             auto j = SampleGroup(i, population.end(), K, rng);
-            auto& parentA = *i;
-            auto& parentB = *j;
+            auto mintIt = std::min_element(
+                i,
+                j,
+                [](auto& a, auto& b){return a.fitness < b.fitness;});
+            std::swap(*mintIt, *i);
+
+            // Parent B...
+            j = SampleGroup(i + 1, population.end(), K, rng);
+            mintIt = std::min_element(
+                i + 1,
+                j,
+                [](auto& a, auto& b){return a.fitness < b.fitness;});
+            std::swap(*mintIt, i[1]);
+
+
+            auto& parentA = i[0];
+            auto& parentB = i[1];
 
             auto [childA, childB] = Crossover(parentA.function, parentB.function, rng);
-            i = SampleGroup(j, population.end(), K, rng);
+            i += 2;
 
             auto const FitnessA = Estemate(data, childA);
             auto const FitnessB = Estemate(data, childB);
@@ -209,10 +270,10 @@ void S()
             population.begin() + Elite,
             [&](auto& c)
             {
-                if (std::uniform_real_distribution<double>{0, 1}(rng) < 0.05)
+                if (std::uniform_real_distribution<double>{0, 1}(rng) < 0.66)
                 {
                     auto x = std::uniform_int_distribution<std::size_t>{0, c.function.Count() - 1}(rng);
-                    c.function.Replace(x, Expr{rng, data.DataCount()});
+                    c.function.Replace(x, GenerateExpr(rng));
                 }
             });
 
@@ -222,7 +283,6 @@ void S()
             population.begin() + Elite,
             population.end(),
             rng);
-
 
         auto i = std::min_element(
             population.begin(),
@@ -243,6 +303,11 @@ void S()
 int main()
 {
     S();
+
+    //std::random_device rng{};
+    //auto x = GenerateExpr(rng, 0, 13);
+    //std::cout << x << '\n';
+
     //PalletData data{"sample/cwk_train.csv"};
     //std::random_device rng{};
     //

@@ -43,7 +43,7 @@ private:
     
     std::vector<double> globalBestPosition_;
 
-    std::size_t iteration_{1000};
+    std::size_t iteration_{1000000};
 
     std::random_device rng_{};
 
@@ -125,6 +125,16 @@ void BasicParticleSwarmOptimisationPolicy::Step() noexcept
             1.0 / (2.0 * std::log(2)),
             1.0 / 2.0 + std::log(2),
             1.0 / 2.0 + std::log(2));
+        
+        std::for_each(
+            p.position,
+            p.position + count,
+            [](auto& x)
+            {
+                if(x < 0)
+                    x = -x; 
+            });
+
         *p.fitness = Estemate(historicalData_, p.position);
         if (*p.fitness < *p.bestFitness)
         {
