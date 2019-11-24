@@ -69,6 +69,37 @@ namespace internal
     }
 
     template<typename ForwardIt>
+    double EvalExpr(ForwardIt first, ForwardIt last)
+    {
+        assert(first != last && "Cannot evaluate an empty Expr");
+        switch (*(first++))
+        {
+        case OpCode::LoadConst:
+            {
+                double temp;
+                std::memcpy(&temp, &*first, 8);
+                return temp;
+            }
+        case OpCode::LoadArg:
+            // Invalid!
+            return 0.0;
+        case OpCode::Add:
+            {
+                auto i = EndOfExpr(first, last);
+                return EvalExpr(first, i) + EvalExpr(i, last);
+            }
+        case OpCode::Mul:
+            {
+                auto i = EndOfExpr(first, last);
+                return EvalExpr(first, i) * EvalExpr(i, last);
+            }
+        }
+
+        // Unreachable!!
+        return 0.0;
+    }
+
+    template<typename ForwardIt>
     std::ostream& PrintExpr(
         ForwardIt first,
         ForwardIt last,
@@ -113,60 +144,26 @@ namespace internal
         return outs;
     }
 
-    template<typename OutputIt, typename RngT>
-    OutputIt RandomExpr(OutputIt outIt, RngT& rng, std::size_t argCount)
-    {
-        std::uniform_real_distribution<double> d{0.0, 1.0};
-        auto const X = d(rng);
-        if(X < 0.10)
-        {
-            *outIt = OpCode::LoadConst;
-            ++outIt;
-            auto const Val = std::uniform_real_distribution<double>{-1, 1}(rng);
-            std::size_t temp;
-            std::memcpy(&temp, &Val, 8);
-            *outIt = temp;
-            return ++outIt;
-        }
-        else if(X < 0.60)
-        {
-            *outIt = OpCode::LoadArg;
-            ++outIt;
-            auto const Val = std::uniform_int_distribution<std::size_t>{0, argCount - 1}(rng);
-            *outIt = Val;
-            return ++outIt;
-        }
-        else if(X < 0.80)
-        {
-            *outIt = internal::OpCode::Add;
-            ++outIt;
-            outIt = RandomExpr(outIt, rng, argCount);
-            return RandomExpr(outIt, rng, argCount);
-        }
-        else
-        {
-            *outIt = internal::OpCode::Mul;
-            ++outIt;
-            outIt = RandomExpr(outIt, rng, argCount);
-            return RandomExpr(outIt, rng, argCount);
-        }
-    }
-
     template<typename ForwardIt>
     std::size_t CountExpr(ForwardIt first, ForwardIt last)
     {
-        switch (*(first++))
-        {
-        case OpCode::LoadConst:
-        case OpCode::LoadArg:
-            return 1;
-        case OpCode::Add:
-        case OpCode::Mul:
-            auto i = EndOfExpr(first, last);
-            return CountExpr(first, i) + CountExpr(i, last) + 1;
+        std::size_t count{};
+        while(first != last) {
+            ++count;
+            switch (*first)
+            {
+            case OpCode::LoadConst:
+            case OpCode::LoadArg:
+                first += 2;
+                break;
+            case OpCode::Add:
+            case OpCode::Mul:
+                ++first;
+                break;
+            }
         }
 
-        return 0;
+        return count;
     }
 
     template<typename ForwardIt>
@@ -175,21 +172,46 @@ namespace internal
         if(id-- == 0)
             return first;
         
-        switch (*(first++))
+        while (first != last)
         {
-        case OpCode::LoadConst:
-        case OpCode::LoadArg:
-            return last;
-        case OpCode::Add:
-        case OpCode::Mul:
-            auto i = EndOfExpr(first, last);
-            auto const Count = CountExpr(first, i);
-            return id < Count
-                ? FindExpr(first, i, id)
-                : FindExpr(i, last, id - Count);
+            if(id-- == 0)
+                return first;
+            switch (*first)
+            {
+            case OpCode::LoadConst:
+            case OpCode::LoadArg:
+                first += 2;
+                break;
+            case OpCode::Add:
+            case OpCode::Mul:
+                ++first;
+                break;
+            }
         }
 
-        return last;
+        return first;
+    }
+
+    template<typename ForwardIt>
+    bool IsConstExpr(ForwardIt first, ForwardIt last)
+    {
+        while (first != last)
+        {
+            switch (*first)
+            {
+            case OpCode::LoadConst:
+                first += 2;
+                break;
+            case OpCode::LoadArg:
+                return false;
+            case OpCode::Add:
+            case OpCode::Mul:
+                ++first;
+                break;
+            }
+        }
+
+        return true;
     }
 }
 
@@ -200,8 +222,8 @@ class Expr final
     friend Expr operator+(Expr const& lhs, Expr const& rhs);
     friend Expr operator*(Expr const& lhs, Expr const& rhs);
 public:
-    template<typename RngT>
-    explicit Expr(RngT& rng, std::size_t argCount);
+
+    bool IsConst() const noexcept;
 
     bool Replace(std::size_t id, Expr const& expr);
 
@@ -256,10 +278,9 @@ private:
     }
 };
 
-template<typename RngT>
-Expr::Expr(RngT& rng, std::size_t argCount)
+bool Expr::IsConst() const noexcept
 {
-    internal::RandomExpr(std::back_inserter(expr_), rng, argCount);
+    return internal::IsConstExpr(expr_.begin(), expr_.end());
 }
 
 bool Expr::Replace(std::size_t id, Expr const& expr)

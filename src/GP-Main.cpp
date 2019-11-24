@@ -23,8 +23,8 @@ std::pair<Expr, Expr> Crossover(
     auto const CountA = parentA.Count();
     auto const CountB = parentB.Count();
 
-    auto const NodeA = std::uniform_int_distribution<std::size_t>{0, CountA - 1}(rng);
-    auto const NodeB = std::uniform_int_distribution<std::size_t>{0, CountB - 1}(rng);
+    auto const NodeA = std::uniform_int_distribution<std::size_t>{1, CountA - 1}(rng);
+    auto const NodeB = std::uniform_int_distribution<std::size_t>{1, CountB - 1}(rng);
 
     a.Replace(NodeA, parentB.SubExpr(NodeB));
     b.Replace(NodeB, parentA.SubExpr(NodeA));
@@ -147,71 +147,37 @@ void MoveRandom(
 }
 
 template<typename RngT>
-Expr GenerateExpr(RngT& rng)
-{
-    std::uniform_real_distribution<> d{0, 1};
-    auto p = d(rng);
-    if(p < 0.6)
-        return Const(d(rng));
-    else if(p < 0.8)
-        return GenerateExpr(rng) + GenerateExpr(rng);
-    else
-        return GenerateExpr(rng) * GenerateExpr(rng);
-}
-
-template<typename RngT>
-Expr GenerateExpr(
+Expr GenerateRandomExpr(
     RngT& rng,
-    std::size_t firstArgId,
-    std::size_t lastArgId)
+    std::uint64_t argCount,
+    std::size_t maxDepth)
 {
-
-    if(firstArgId == lastArgId)
-        return GenerateExpr(rng);
-    else if(firstArgId + 1 == lastArgId)
-    {
-        std::uniform_real_distribution<> d{0, 1};
-        auto p = d(rng);
-        auto lhs = GenerateExpr(rng);
-        auto rhs = Arg(firstArgId);
-        return p < 0.75
-            ? lhs + rhs
-            : lhs * rhs;
-    }
+    if (maxDepth == 0)
+        return std::uniform_real_distribution<>{ 0, 1 }(rng) < 1.0 / 2.0
+            ? Const(std::uniform_real_distribution<>{ 0, 1000 }(rng))
+            : Arg(std::uniform_int_distribution<std::uint64_t>{0, argCount - 1}(rng));
     else
-    {
-        std::uniform_real_distribution<> d{0, 1};
-        auto p = d(rng);
-        auto split = firstArgId + (lastArgId - firstArgId) / 2;
-        auto lhs = GenerateExpr(rng, firstArgId, split);
-        auto rhs = GenerateExpr(rng, split, lastArgId);
-        return p < 0.75
-            ? lhs + rhs
-            : lhs * rhs;
-    }
+        return std::uniform_real_distribution<>{ 0, 1 }(rng) < 1.0 / 2.0
+            ? GenerateRandomExpr(rng, argCount, maxDepth - 1) + GenerateRandomExpr(rng, argCount, maxDepth - 1)
+            : GenerateRandomExpr(rng, argCount, maxDepth - 1) * GenerateRandomExpr(rng, argCount, maxDepth - 1);
 }
+
 void S()
 {
     double best = std::numeric_limits<double>::infinity();
     PalletData data{ "sample/cwk_train.csv" };
 
-    std::random_device rng{};
+    std::minstd_rand rng{ std::random_device{}()};
     std::vector<Candidate> population{};
     std::generate_n(
         std::back_inserter(population),
-        100,
+        1000,
         [&]()
         {
-            Candidate c{ GenerateExpr(rng, 0, data.DataCount()) , 0.0};
+            Candidate c{ GenerateRandomExpr(rng, data.DataCount(), 1) , 0.0};
             c.fitness = Estemate(data, c.function);
             return c;
         });
-
-    //for(auto&& c: population)
-    //    std::cout
-    //        << "[" << c.function.Count() << "] "
-    //        << c.fitness
-    //        << " <-- " << c.function << '\n';
 
     auto const Elite = population.size() / 2;
     for (std::size_t count{}; count != 10000; ++count)
@@ -260,7 +226,7 @@ void S()
                 i,
                 population.end(),
                 rng,
-                [](auto& c) {return 1 / c.fitness; });
+                [](auto& c) {return 1 / c.fitness * 1; });
             if(i != it)
                 std::swap(*i, *it);
         }
@@ -270,10 +236,10 @@ void S()
             population.begin() + Elite,
             [&](auto& c)
             {
-                if (std::uniform_real_distribution<double>{0, 1}(rng) < 0.66)
+                if (std::uniform_real_distribution<double>{0, 1}(rng) < 0.05)
                 {
-                    auto x = std::uniform_int_distribution<std::size_t>{0, c.function.Count() - 1}(rng);
-                    c.function.Replace(x, GenerateExpr(rng));
+                    auto x = std::uniform_int_distribution<std::size_t>{1, c.function.Count() - 1}(rng);
+                    c.function.Replace(x, GenerateRandomExpr(rng, data.DataCount(), 1));
                 }
             });
 
@@ -293,7 +259,7 @@ void S()
         {
             best = i->fitness;
             std::cout
-                << ">>> " << count << ": "
+                << "\n\n>>> " << count << ": "
                 << i->fitness
                 << " [" << i->function << "]\n";
         }

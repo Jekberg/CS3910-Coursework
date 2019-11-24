@@ -103,10 +103,10 @@ void BasicParticleSwarmOptimisationPolicy::Step() noexcept
     if(globalBestCost < globalBestFitness_)
     {
         globalBestFitness_ = globalBestCost;
-        std::cout << globalBestCost << '|';
+        std::cout << iteration_ << ": " << globalBestCost << " [";
         for(auto&& x: bestPosition)
             std::cout << ' ' << x;
-        std::cout << '\n';
+        std::cout << "]\n";
 
         globalBestPosition_ =  std::move(bestPosition);
     }
