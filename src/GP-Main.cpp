@@ -171,7 +171,7 @@ void S()
     std::vector<Candidate> population{};
     std::generate_n(
         std::back_inserter(population),
-        1000,
+        100,
         [&]()
         {
             Candidate c{ GenerateRandomExpr(rng, data.DataCount(), 1) , 0.0};
@@ -226,7 +226,7 @@ void S()
                 i,
                 population.end(),
                 rng,
-                [](auto& c) {return 1 / c.fitness * 1; });
+                [](auto& c) {return 1 / c.fitness; });
             if(i != it)
                 std::swap(*i, *it);
         }

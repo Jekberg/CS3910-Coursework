@@ -39,14 +39,13 @@ private:
 
     PalletData historicalData_;
 
+    std::vector<std::minstd_rand> rngs_;
+
     double globalBestFitness_ = std::numeric_limits<double>::infinity();
     
     std::vector<double> globalBestPosition_;
 
-    std::size_t iteration_{1000000};
-
-    std::random_device rng_{};
-
+    std::size_t iteration_{0};
 };
 
 template<typename ForwardIt>
@@ -73,20 +72,28 @@ BasicParticleSwarmOptimisationPolicy::BasicParticleSwarmOptimisationPolicy(
     std::size_t populationSize)
     : particles_{populationSize, historicalData.DataCount()}
     , historicalData_{std::move(historicalData)}
+    , rngs_(populationSize)
 {
 }
 
 void BasicParticleSwarmOptimisationPolicy::Initialise() noexcept
 {
     auto const count = particles_.VectorSize();
+
+    std::random_device rand{};
+    std::for_each(rngs_.begin(), rngs_.end(), [&](auto& rng)
+    {
+        rng.seed(rand());
+    });
+
     particles_.ForEach([&](auto&& p)
     {
-        InitialiseRandomWeights(p.position, p.position + count, rng_);
+        InitialiseRandomWeights(p.position, p.position + count, rngs_[p.id]);
         std::copy(p.position, p.position + count, p.bestPosition);
         std::fill(p.velocity, p.velocity + count, 0.0);
 
-        *p.fitness = Estemate(historicalData_, p.position);
-        *p.bestFitness = *p.fitness;
+        p.fitness = Estemate(historicalData_, p.position);
+        p.bestFitness = p.fitness;
     });
 }
 
@@ -97,7 +104,7 @@ void BasicParticleSwarmOptimisationPolicy::Step() noexcept
         std::back_inserter(bestPosition),
         [](auto const& a, auto const& b)
         {
-            return *a.fitness < *b.fitness;
+            return a.fitness < b.fitness;
         });
 
     if(globalBestCost < globalBestFitness_)
@@ -112,7 +119,7 @@ void BasicParticleSwarmOptimisationPolicy::Step() noexcept
     }
 
     auto const count = particles_.VectorSize();
-    particles_.ForEach([&](auto&& p)
+    particles_.ForAll([&](auto&& p)
     {
         NextPosition(
             p.position,
@@ -121,7 +128,7 @@ void BasicParticleSwarmOptimisationPolicy::Step() noexcept
             globalBestPosition_.data(),
             p.velocity,
             p.position,
-            rng_,
+            rngs_[p.id],
             1.0 / (2.0 * std::log(2)),
             1.0 / 2.0 + std::log(2),
             1.0 / 2.0 + std::log(2));
@@ -132,13 +139,13 @@ void BasicParticleSwarmOptimisationPolicy::Step() noexcept
             [](auto& x)
             {
                 if(x < 0)
-                    x = -x; 
+                    x = 0; 
             });
 
-        *p.fitness = Estemate(historicalData_, p.position);
-        if (*p.fitness < *p.bestFitness)
+        p.fitness = Estemate(historicalData_, p.position);
+        if (p.fitness < p.bestFitness)
         {
-            *p.bestFitness = *p.fitness;
+            p.bestFitness = p.fitness;
             std::copy(p.position, p.position + count, p.bestPosition);
         }
     });
@@ -146,7 +153,7 @@ void BasicParticleSwarmOptimisationPolicy::Step() noexcept
 
 bool BasicParticleSwarmOptimisationPolicy::Terminate() noexcept
 {
-    return iteration_-- < 1;
+    return 10000 < ++iteration_;
 }
 
 template<typename ForwardIt>

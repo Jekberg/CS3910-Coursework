@@ -39,64 +39,68 @@ namespace internal
     }
 
     template<typename ForwardIt, typename RandomIt>
-    double EvalExpr(ForwardIt first, ForwardIt last, RandomIt argIt)
+    std::pair<double, ForwardIt> EvalExpr(ForwardIt first, ForwardIt last, RandomIt argIt)
     {
         assert(first != last && "Cannot evaluate an empty Expr");
-        switch (*(first++))
+        switch (*first)
         {
         case OpCode::LoadConst:
             {
                 double temp;
-                std::memcpy(&temp, &*first, 8);
-                return temp;
+                std::memcpy(&temp, &first[1], 8);
+                return {temp, first + 2};
             }
         case OpCode::LoadArg:
-            return argIt[*first];
+            return {argIt[first[1]], first + 2};
         case OpCode::Add:
             {
-                auto i = EndOfExpr(first, last);
-                return EvalExpr(first, i, argIt) + EvalExpr(i, last, argIt);
+                auto [lhsVal, lhsEnd] = EvalExpr(first + 1, last, argIt);
+                auto [rhsVal, rhsEnd] = EvalExpr(lhsEnd, last, argIt);
+                return {lhsVal + rhsVal, rhsEnd};
             }
         case OpCode::Mul:
             {
-                auto i = EndOfExpr(first, last);
-                return EvalExpr(first, i, argIt) * EvalExpr(i, last, argIt);
+                auto [lhsVal, lhsEnd] = EvalExpr(first + 1, last, argIt);
+                auto [rhsVal, rhsEnd] = EvalExpr(lhsEnd, last, argIt);
+                return {lhsVal * rhsVal, rhsEnd};
             }
         }
 
         // Unreachable!!
-        return 0.0;
+        return {0.0, last};
     }
 
-    template<typename ForwardIt>
-    double EvalExpr(ForwardIt first, ForwardIt last)
+    template<typename ForwardIt, typename RandomIt>
+    std::pair<double, ForwardIt> EvalExpr(ForwardIt first, ForwardIt last)
     {
         assert(first != last && "Cannot evaluate an empty Expr");
-        switch (*(first++))
+        switch (*first)
         {
         case OpCode::LoadConst:
             {
                 double temp;
-                std::memcpy(&temp, &*first, 8);
-                return temp;
+                std::memcpy(&temp, &first[1], 8);
+                return {temp, first + 2};
             }
         case OpCode::LoadArg:
-            // Invalid!
-            return 0.0;
+            // Not allowed...
+            return {0.0, first};
         case OpCode::Add:
             {
-                auto i = EndOfExpr(first, last);
-                return EvalExpr(first, i) + EvalExpr(i, last);
+                auto [lhsVal, lhsEnd] = EvalExpr(first + 1, last);
+                auto [rhsVal, rhsEnd] = EvalExpr(lhsEnd, last);
+                return {lhsVal + rhsVal, rhsEnd};
             }
         case OpCode::Mul:
             {
-                auto i = EndOfExpr(first, last);
-                return EvalExpr(first, i) * EvalExpr(i, last);
+                auto [lhsVal, lhsEnd] = EvalExpr(first + 1, last);
+                auto [rhsVal, rhsEnd] = EvalExpr(lhsEnd, last);
+                return {lhsVal * rhsVal, rhsEnd};
             }
         }
 
         // Unreachable!!
-        return 0.0;
+        return {0.0, last};
     }
 
     template<typename ForwardIt>
@@ -299,7 +303,10 @@ bool Expr::Replace(std::size_t id, Expr const& expr)
 template<typename RandomIt>
 double Expr::Eval(RandomIt argIt) const
 {
-    return internal::EvalExpr(expr_.begin(), expr_.end(), argIt);
+    auto [val, it] = internal::EvalExpr(expr_.begin(), expr_.end(), argIt);
+    if(it != expr_.end())
+        return 0.0;
+    return val;
 }
 
 Expr Expr::SubExpr(std::size_t id) const

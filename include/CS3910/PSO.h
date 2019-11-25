@@ -1,6 +1,7 @@
 #ifndef CS3910__PSO_H_
 #define CS3910__PSO_H_
 
+#include <execution>
 #include <random>
 
 class Particles
@@ -8,11 +9,12 @@ class Particles
 public:
     struct Candidate
     {
+        std::size_t id;
         double* position;
         double* velocity;
         double* bestPosition;
-        double* fitness;
-        double* bestFitness;
+        double& fitness;
+        double& bestFitness;
     };
 
     explicit Particles(
@@ -22,6 +24,9 @@ public:
     template<typename Consumer>
     void ForEach(Consumer&& consumer);
 
+    template<typename Consumer>
+    void ForAll(Consumer&& consumer);
+
     template<typename OutputIt, typename Compare>
     double FindMin(OutputIt outIt, Compare&& compare)
     {
@@ -30,7 +35,7 @@ public:
             population_.end(),
             compare);
         std::copy(it->position, it->position + vectorSize_, outIt);
-        return *it->fitness;
+        return it->fitness;
     }
 
     constexpr std::size_t VectorSize() const noexcept;
@@ -63,19 +68,20 @@ Particles::Particles(
     , bestPositions_(populationSize * vectorSize)
     , fitness_(populationSize)
     , bestFitness_(populationSize)
-    , population_(populationSize)
+    , population_{}
     , populationSize_{populationSize}
     , vectorSize_{ vectorSize }
 {
 
-    for (std::size_t i{}; i != population_.size(); ++i)
+    for (std::size_t i{}; i != populationSize_; ++i)
     {
-        auto& p{population_[i]};
-        p.position = positions_.data() + vectorSize * i;
-        p.velocity = velocities_.data() + vectorSize * i;
-        p.bestPosition = bestPositions_.data() + vectorSize * i;
-        p.fitness = fitness_.data() + i;
-        p.bestFitness = bestFitness_.data() + i;
+        population_.emplace_back(Candidate{
+            i,
+            positions_.data() + vectorSize * i,
+            velocities_.data() + vectorSize * i,
+            bestPositions_.data() + vectorSize * i,
+            fitness_[i],
+            bestFitness_[i]});
     }
 }
 
@@ -83,6 +89,16 @@ template<typename Consumer>
 void Particles::ForEach(Consumer&& consumer)
 {
     std::for_each(
+        population_.begin(),
+        population_.end(),
+        consumer);
+}
+
+template<typename Consumer>
+void Particles::ForAll(Consumer&& consumer)
+{
+    std::for_each(
+        std::execution::par_unseq,
         population_.begin(),
         population_.end(),
         consumer);
