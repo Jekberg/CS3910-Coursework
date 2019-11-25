@@ -98,7 +98,7 @@ template<typename Consumer>
 void Particles::ForAll(Consumer&& consumer)
 {
     std::for_each(
-        std::execution::par_unseq,
+        std::execution::par,
         population_.begin(),
         population_.end(),
         consumer);

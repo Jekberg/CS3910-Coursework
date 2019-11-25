@@ -15,11 +15,18 @@
 // 35 pallets per trucks
 // Trucks = pallets / 35
 
-class BasicParticleSwarmOptimisationPolicy
+class BasicPSOPolicy
 {
 public:
 
-    explicit BasicParticleSwarmOptimisationPolicy(
+    struct Result
+    {
+        std::vector<double> position;
+        double fitness;
+    };
+
+
+    explicit BasicPSOPolicy(
         PalletData historicalData,
         std::size_t populationSize);
 
@@ -29,9 +36,7 @@ public:
 
     bool Terminate() noexcept;
 
-    void Complete() const noexcept
-    {
-    }
+    Result Complete() const noexcept;
 
 private:
 
@@ -40,6 +45,30 @@ private:
     PalletData historicalData_;
 
     std::vector<std::minstd_rand> rngs_;
+
+    double globalBestFitness_ = std::numeric_limits<double>::infinity();
+    
+    std::vector<double> globalBestPosition_;
+
+    std::size_t iteration_{0};
+};
+
+class HyperPSOPolicy final
+{
+public:
+    explicit HyperPSOPolicy();
+
+    void Initialise();
+
+    void Step();
+
+    bool Terminate();
+
+    void Complete();
+private:
+    Particles particles_;
+
+    PalletData historicalData_;
 
     double globalBestFitness_ = std::numeric_limits<double>::infinity();
     
@@ -61,13 +90,18 @@ void InitialiseRandomWeights(
 
 int main()
 {
-    BasicParticleSwarmOptimisationPolicy pso{
+    BasicPSOPolicy pso{
         PalletData{"sample/cwk_train.csv"},
-        100};
-    Simulate(pso);
+        23};
+    auto result = Simulate(pso);
+    
+    std::cout << result.fitness << '|';
+    for(auto&& x: result.position)
+        std::cout << ' ' << x;
+    std::cout << '\n';
 }
 
-BasicParticleSwarmOptimisationPolicy::BasicParticleSwarmOptimisationPolicy(
+BasicPSOPolicy::BasicPSOPolicy(
     PalletData historicalData,
     std::size_t populationSize)
     : particles_{populationSize, historicalData.DataCount()}
@@ -76,7 +110,7 @@ BasicParticleSwarmOptimisationPolicy::BasicParticleSwarmOptimisationPolicy(
 {
 }
 
-void BasicParticleSwarmOptimisationPolicy::Initialise() noexcept
+void BasicPSOPolicy::Initialise() noexcept
 {
     auto const count = particles_.VectorSize();
 
@@ -97,7 +131,7 @@ void BasicParticleSwarmOptimisationPolicy::Initialise() noexcept
     });
 }
 
-void BasicParticleSwarmOptimisationPolicy::Step() noexcept
+void BasicPSOPolicy::Step() noexcept
 {
     std::vector<double> bestPosition;
     auto globalBestCost = particles_.FindMin(
@@ -110,11 +144,6 @@ void BasicParticleSwarmOptimisationPolicy::Step() noexcept
     if(globalBestCost < globalBestFitness_)
     {
         globalBestFitness_ = globalBestCost;
-        std::cout << iteration_ << ": " << globalBestCost << " [";
-        for(auto&& x: bestPosition)
-            std::cout << ' ' << x;
-        std::cout << "]\n";
-
         globalBestPosition_ =  std::move(bestPosition);
     }
 
@@ -151,9 +180,16 @@ void BasicParticleSwarmOptimisationPolicy::Step() noexcept
     });
 }
 
-bool BasicParticleSwarmOptimisationPolicy::Terminate() noexcept
+bool BasicPSOPolicy::Terminate() noexcept
 {
     return 10000 < ++iteration_;
+}
+
+typename BasicPSOPolicy::Result
+BasicPSOPolicy::Complete()
+    const noexcept
+{
+    return {globalBestPosition_, globalBestFitness_};
 }
 
 template<typename ForwardIt>

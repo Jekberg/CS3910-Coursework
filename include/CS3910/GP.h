@@ -109,6 +109,7 @@ namespace internal
         ForwardIt last,
         std::ostream& outs)
     {
+        assert(first != last && "Cannot print empty expression");
         switch (*(first++))
         {
         case OpCode::LoadConst:
@@ -226,6 +227,7 @@ class Expr final
     friend Expr operator+(Expr const& lhs, Expr const& rhs);
     friend Expr operator*(Expr const& lhs, Expr const& rhs);
 public:
+    explicit Expr() = default;
 
     bool IsConst() const noexcept;
 
