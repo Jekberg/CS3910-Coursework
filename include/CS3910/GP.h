@@ -47,20 +47,20 @@ namespace internal
         case OpCode::LoadConst:
             {
                 double temp;
-                std::memcpy(&temp, &first[1], 8);
-                return {temp, first + 2};
+                std::memcpy(&temp, &*std::next(first), 8);
+                return {temp, std::next(first, 2)};
             }
         case OpCode::LoadArg:
-            return {argIt[first[1]], first + 2};
+            return {argIt[*std::next(first)], std::next(first, 2)};
         case OpCode::Add:
             {
-                auto [lhsVal, lhsEnd] = EvalExpr(first + 1, last, argIt);
+                auto [lhsVal, lhsEnd] = EvalExpr(std::next(first), last, argIt);
                 auto [rhsVal, rhsEnd] = EvalExpr(lhsEnd, last, argIt);
                 return {lhsVal + rhsVal, rhsEnd};
             }
         case OpCode::Mul:
             {
-                auto [lhsVal, lhsEnd] = EvalExpr(first + 1, last, argIt);
+                auto [lhsVal, lhsEnd] = EvalExpr(std::next(first), last, argIt);
                 auto [rhsVal, rhsEnd] = EvalExpr(lhsEnd, last, argIt);
                 return {lhsVal * rhsVal, rhsEnd};
             }
@@ -79,21 +79,21 @@ namespace internal
         case OpCode::LoadConst:
             {
                 double temp;
-                std::memcpy(&temp, &first[1], 8);
-                return {temp, first + 2};
+                std::memcpy(&temp, &*std::next(first), 8);
+                return {temp, std::next(first, 2)};
             }
         case OpCode::LoadArg:
             // Not allowed...
             return {0.0, first};
         case OpCode::Add:
             {
-                auto [lhsVal, lhsEnd] = EvalExpr(first + 1, last);
+                auto [lhsVal, lhsEnd] = EvalExpr(std::next(first), last);
                 auto [rhsVal, rhsEnd] = EvalExpr(lhsEnd, last);
                 return {lhsVal + rhsVal, rhsEnd};
             }
         case OpCode::Mul:
             {
-                auto [lhsVal, lhsEnd] = EvalExpr(first + 1, last);
+                auto [lhsVal, lhsEnd] = EvalExpr(std::next(first), last);
                 auto [rhsVal, rhsEnd] = EvalExpr(lhsEnd, last);
                 return {lhsVal * rhsVal, rhsEnd};
             }
@@ -104,49 +104,53 @@ namespace internal
     }
 
     template<typename ForwardIt>
-    std::ostream& PrintExpr(
+    ForwardIt PrintExpr(
         ForwardIt first,
         ForwardIt last,
         std::ostream& outs)
     {
         assert(first != last && "Cannot print empty expression");
-        switch (*(first++))
+        switch (*first)
         {
         case OpCode::LoadConst:
             {
                 double temp;
-                std::memcpy(&temp, &*first, 8);
+                std::memcpy(&temp, &*std::next(first), 8);
                 outs << temp;
+                return std::next(first, 2);
             }
-            break;
         case OpCode::LoadArg:
-            outs << 'x' << *first;
-            break;
+            outs << 'x' << *std::next(first);
+            return std::next(first, 2);
+            
         case OpCode::Add:
             {
-                auto i = EndOfExpr(first, last);
-                PrintExpr(first, i, outs);
+                auto lhsEnd = PrintExpr(std::next(first), last, outs);
                 outs << " + ";
-                PrintExpr(i, last, outs);
+                return PrintExpr(lhsEnd, last, outs);
+                
             }
-            break;
         case OpCode::Mul:
             {
-                auto i = EndOfExpr(first, last);
+                ++first;
                 if(*first == internal::OpCode::Add)
-                    PrintExpr(first, i, outs << '(') << ')';
-                else 
-                    PrintExpr(first, i, outs);
+                    outs << '(';
+                auto lhsEnd = PrintExpr(first, last, outs);
+                if (*first == internal::OpCode::Add)
+                    outs << ')';
+                
                 outs << " * ";
-                if(*i == internal::OpCode::Add)
-                    PrintExpr(i, last, outs << '(') << ')';
-                else 
-                    PrintExpr(i, last, outs);
+                
+                if(*lhsEnd == internal::OpCode::Add)
+                    outs << '(';
+                auto rhsEnd = PrintExpr(lhsEnd, last, outs);
+                if (*lhsEnd == internal::OpCode::Add)
+                    outs << ')';
+                return rhsEnd;
             }
-            break;
         }
 
-        return outs;
+        return last;
     }
 
     template<typename ForwardIt>
@@ -196,28 +200,6 @@ namespace internal
 
         return first;
     }
-
-    template<typename ForwardIt>
-    bool IsConstExpr(ForwardIt first, ForwardIt last)
-    {
-        while (first != last)
-        {
-            switch (*first)
-            {
-            case OpCode::LoadConst:
-                first += 2;
-                break;
-            case OpCode::LoadArg:
-                return false;
-            case OpCode::Add:
-            case OpCode::Mul:
-                ++first;
-                break;
-            }
-        }
-
-        return true;
-    }
 }
 
 class Expr final
@@ -228,8 +210,6 @@ class Expr final
     friend Expr operator*(Expr const& lhs, Expr const& rhs);
 public:
     explicit Expr() = default;
-
-    bool IsConst() const noexcept;
 
     bool Replace(std::size_t id, Expr const& expr);
 
@@ -284,11 +264,6 @@ private:
     }
 };
 
-bool Expr::IsConst() const noexcept
-{
-    return internal::IsConstExpr(expr_.begin(), expr_.end());
-}
-
 bool Expr::Replace(std::size_t id, Expr const& expr)
 {
     auto i = internal::FindExpr(expr_.begin(), expr_.end(), id);
@@ -328,7 +303,8 @@ std::size_t Expr::Count() const noexcept
 
 std::ostream& Expr::Print(std::ostream& outs) const
 {
-    return internal::PrintExpr(expr_.begin(), expr_.end(), outs);
+    internal::PrintExpr(expr_.begin(), expr_.end(), outs);
+    return outs;
 }
 
 Expr Const(double constVal)
@@ -354,6 +330,59 @@ Expr operator*(Expr const& lhs, Expr const& rhs)
 std::ostream& operator<<(std::ostream& outs, Expr const& expr)
 {
     return expr.Print(outs);
+}
+
+template<typename ForwardIt, typename RngT, typename F>
+ForwardIt Roulette(ForwardIt first, ForwardIt last, RngT& rng, F&& f)
+{
+    auto const Total = std::accumulate(
+        first,
+        last,
+        double{},
+        [&](auto&& acc, auto&& x) { return acc + f(x); });
+
+    auto r = std::uniform_real_distribution<>{ 0.0, Total }(rng);
+    for (auto i = first; i != last; ++i)
+        if (Total <= (r += f(*i)))
+            return i;
+    return last;
+}
+
+template<typename RandomIt, typename RngT>
+RandomIt SampleGroup(RandomIt first, RandomIt last, std::size_t k, RngT& rng)
+{
+    // Move k elements selected at random to the front of the range.
+    assert(first != last);
+    assert(k != 0);
+
+    if (auto count = static_cast<std::size_t>(std::distance(first, last)); count < k)
+        k = count;
+
+    for (auto i = first; i != first + k; ++i)
+    {
+        auto c = std::uniform_int_distribution<std::size_t>{
+            0,
+            static_cast<std::size_t>(std::distance(i, last) - 1) }(rng);
+        if (i != i + c)
+            std::swap(*i, i[c]);
+    }
+
+    // The end of the sample group
+    return first + k;
+}
+
+template<typename RngT>
+Expr SubTreeCrossover(
+    Expr const& a,
+    Expr const& b,
+    RngT& rng)
+{
+    using Distribution = std::uniform_int_distribution<std::size_t>;
+    auto idA = Distribution{1, a.Count() - 1}(rng);
+    auto idB = Distribution{1, b.Count() - 1}(rng);
+    auto temp{a};
+    temp.Replace(idA, b.SubExpr(idB));
+    return temp;
 }
 
 #endif // !CS3910__GP_H_

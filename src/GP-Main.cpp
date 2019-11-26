@@ -1,8 +1,10 @@
 #include "CS3910/Simulation.h"
 #include "CS3910/Pallets.h"
 #include "CS3910/GP.h"
+#include <cmath>
 #include <execution>
 #include <iostream>
+
 
 double Estemate(PalletData& data, Expr const& expr);
 
@@ -33,31 +35,16 @@ std::pair<Expr, Expr> Crossover(
     return {a, b};
 }
 
-template<typename RandomIt, typename RngT>
-RandomIt SampleGroup(RandomIt first, RandomIt last, std::size_t k, RngT& rng)
-{
-    // Move k elements selected at random to the front of the range.
-    assert(first != last);
-    assert(k != 0);
-    assert(first + k <= last);
-
-    for (auto i = first; i != first + k; ++i)
-    {
-        auto c = std::uniform_int_distribution<std::size_t>{
-            0,
-            static_cast<std::size_t>(std::distance(i, last) - 1) }(rng);
-        if(i != i + c)
-            std::swap(*i, i[c]);
-    }
-
-    // The end of the sample group
-    return first + k;
-}
-
-class GAPolicy final
+class GPPolicy final
 {
 public:
-    explicit GAPolicy(
+    struct Result
+    {
+        Expr function;
+        double fitness;
+    };
+
+    explicit GPPolicy(
         PalletData historicalData,
         std::size_t populationSize)
         noexcept;
@@ -66,10 +53,7 @@ public:
 
     void Step();
 
-    void Complete()
-    {
-
-    }
+    Result Complete();
 
     bool Terminate() noexcept;
 private:
@@ -83,105 +67,89 @@ private:
 
     PalletData historicalData_;
 
-    std::random_device rng_{};
+    std::minstd_rand rng_{};
 
     double bestFitness_ = std::numeric_limits<double>::infinity();
 
+    Expr bestFunction_;
+
     std::size_t iteration_{};
-};
 
-//template<typename RandomIt, typename RngT>
-//std::tuple<Candidate, Candidate, RandomIt> SelectParents(
-//    RandomIt first,
-//    RandomIt last,
-//    RngT& rng)
-//{
-//    auto const K = 2;
-//    if (first + K != last)
-//    {
-//        // Find the first parent
-//        auto it = SampleGroup(first, last, params_.k, rng_);
-//        auto minIt = std::min_element(
-//            first,
-//            it,
-//            [](auto& a, auto& b) { return a.cost < b.cost; });
-//        if(first != minIt)
-//            std::swap(first[0], *minIt);
-//
-//        auto& parentA = first[0];
-//
-//        // Find the second parent
-//        it = SampleGroup(first + 1, last, params_.k, rng_);
-//        minIt = std::min_element(
-//            first + 1,
-//            it,
-//            [](auto& a, auto& b)
-//            {
-//                return a.cost < b.cost;
-//            });
-//        if (first + 1 != minIt)
-//            std::swap(first[1], *minIt);
-//    }
-//
-//    return {first[0], first[1], first + 2};
-//}
-
-//template<typename RandomIt>
-//void SelectNext(
-//    RandomIt first,
-//    RandomIt last)
-//{
-//    for (auto i = population_.get(); i != population_.get() + params_.eliteSize; ++i)
-//    {
-//        auto it = Roulette(
-//            i,
-//            PopulationEnd,
-//            rng_,
-//            [](auto& path) {return 1 / path.cost; });
-//        if(i != it)
-//            std::swap(*i, *it);
-//    }
-//
-//    MoveRandom(first, last, population_.get() + params_.eliteSize, PopulationEnd, rng_);
-//}
-
-template<typename ForwardIt, typename RngT, typename F>
-ForwardIt Roulette(ForwardIt first, ForwardIt last, RngT& rng, F&& f)
-{
-    auto const Total = std::accumulate(
-        first,
-        last,
-        double{}, [&](auto&& acc, auto&& x)
-        {
-            return acc + f(x);
-        });
-
-    auto r = std::uniform_real_distribution<>{ 0.0, Total }(rng);
-    for (auto i = first; i != last; ++i)
-        if (Total <= (r += f(*i)))
-            return i;
-    return last;
-}
-
-template<typename RandomItFrom, typename ForwardItTo, typename RngT>
-void MoveRandom(
-    RandomItFrom firstFrom,
-    RandomItFrom lastFrom,
-    ForwardItTo firstTo,
-    ForwardItTo lastTo,
-    RngT& rng)
-{
-    for (; firstFrom != lastFrom && firstTo != lastTo; ++firstFrom, ++firstTo)
+    template<
+        typename ForwardIt,
+        typename OutputIt,
+        typename RngT>
+    ForwardIt SelectAndCrossover(
+        ForwardIt first,
+        ForwardIt last,
+        OutputIt outIt,
+        RngT& rng)
     {
-        auto const Length{ static_cast<std::size_t>(std::distance(
-            firstFrom,
-            lastFrom)) };
-        auto dis{ std::uniform_int_distribution<std::size_t>{0, Length - 1} };
-        auto toMoveIt = firstFrom + dis(rng);
-        std::swap(*firstFrom, *toMoveIt);
-        *firstTo = std::move(*firstFrom);
+        if(std::distance(first, last) < 3)
+            // Can't crossover fewwer than 2 individuals so do not proceed...
+            return first;
+
+        // The location where the parents can be found
+        auto parentIt = first;
+        std::size_t const TournamentSize = 5;
+
+        // Find the first parent using a tornament
+        auto i = SampleGroup(first, last, TournamentSize, rng);
+        i = std::min_element(
+            first,
+            i,
+            [](auto const& a, auto const& b) {return a.fitness < b.fitness;});
+        std::iter_swap(first, i);
+        ++first;
+
+        // Find the second parent using a tornament
+        i = SampleGroup(first, last, TournamentSize, rng);
+        i = std::min_element(
+            first,
+            i,
+            [](auto const& a, auto const& b) {return a.fitness < b.fitness;});
+        std::iter_swap(first, i);
+
+        auto childA = SubTreeCrossover(parentIt->function, std::next(parentIt)->function, rng);
+        auto childB = SubTreeCrossover(std::next(parentIt)->function, parentIt->function, rng);
+        *(outIt++) = Candidate{std::move(childA), 0};
+        *(outIt++) = Candidate{std::move(childB), 0};
+        return std::next(first);
     }
-}
+
+    template<
+        typename ForwardIt,
+        typename OutputIt,
+        typename RngT>
+    ForwardIt SelectAndReplicate(
+        ForwardIt first,
+        ForwardIt last,
+        OutputIt outIt,
+        RngT& rng)
+    {
+        auto it = Roulette(
+            first,
+            last,
+            rng,
+            [](auto const& c) noexcept { return 1 / c.fitness; });
+
+        if (it == last)
+            return it;
+
+        if(std::uniform_real_distribution<>{0, 1}(rng) < 0.05)
+        {
+            auto& temp = it->function;
+            using Distribution = std::uniform_int_distribution<std::size_t>;
+            auto const Id = Distribution{1, temp.Count() - 1}(rng);
+            temp.Replace(Id, GenerateRandomExpr(rng, historicalData_.DataCount(), 2));
+        }
+
+        *outIt = std::move(*it);
+        ++outIt;
+        std::iter_swap(first, it);
+        return std::next(first);
+    }
+};
 
 template<typename RngT>
 Expr GenerateRandomExpr(
@@ -190,22 +158,37 @@ Expr GenerateRandomExpr(
     std::size_t maxDepth)
 {
     if (maxDepth == 0)
-        return std::uniform_real_distribution<>{ 0, 1 }(rng) < 1.0 / 2.0
-            ? Const(std::uniform_real_distribution<>{ 0, 1000 }(rng))
+        return std::uniform_real_distribution<>{ 0, 1 }(rng) < 0.5
+            ? Const(std::uniform_real_distribution<>{ 0, 100 }(rng))
             : Arg(std::uniform_int_distribution<std::uint64_t>{0, argCount - 1}(rng));
     else
-        return std::uniform_real_distribution<>{ 0, 1 }(rng) < 1.0 / 2.0
+        return std::uniform_real_distribution<>{ 0, 1 }(rng) < 0.5
             ? GenerateRandomExpr(rng, argCount, maxDepth - 1) + GenerateRandomExpr(rng, argCount, maxDepth - 1)
             : GenerateRandomExpr(rng, argCount, maxDepth - 1) * GenerateRandomExpr(rng, argCount, maxDepth - 1);
 }
 
-int main()
+int main(int argc, char const** argv)
 {
-    GAPolicy gp{PalletData{"sample/cwk_train.csv"}, 100};
-    Simulate(gp);
+    auto runGP = [](char const* arg)
+    {
+        GPPolicy gp{ PalletData{arg}, 100 };
+        auto result = Simulate(gp);
+
+        std::cout
+            << result.fitness << "| "
+            << result.function << "\n";
+    };
+
+    if(1 < argc)
+        std::for_each_n(
+            argv + 1,
+            argc - 1,
+            runGP);
+    else
+        runGP("sample/cwk_train.csv");
 }
 
-GAPolicy::GAPolicy(
+GPPolicy::GPPolicy(
     PalletData historicalData,
     std::size_t populationSize)
     noexcept
@@ -214,8 +197,9 @@ GAPolicy::GAPolicy(
 {
 }
 
-void GAPolicy::Initialise()
+void GPPolicy::Initialise()
 {
+    rng_.seed(std::random_device{}());
     std::generate(
         population_.begin(),
         population_.end(),
@@ -228,88 +212,57 @@ void GAPolicy::Initialise()
 
 }
 
-void GAPolicy::Step()
+void GPPolicy::Step()
 {
-    auto const Elite = population_.size() / 2;
-    auto const K = 2;
-    std::vector<Candidate> intermidiate{};
-    // Select & Crossover
-    for (auto i{ population_.begin() }; i != population_.end();)
+    std::vector<Candidate> newGeneration{};
+    for(auto i = population_.begin(); i != population_.end();)
     {
-        if(std::distance(i, population_.end()) <= K)
-            break;
-        
-        // Parent A...
-        auto j = SampleGroup(i, population_.end(), K, rng_);
-        auto mintIt = std::min_element(
-            i,
-            j,
-            [](auto& a, auto& b){return a.fitness < b.fitness;});
-        std::swap(*mintIt, *i);
-
-        // Parent B...
-        j = SampleGroup(i + 1, population_.end(), K, rng_);
-        mintIt = std::min_element(
-            i + 1,
-            j,
-            [](auto& a, auto& b){return a.fitness < b.fitness;});
-        std::swap(*mintIt, i[1]);
-
-        auto& parentA = i[0];
-        auto& parentB = i[1];
-
-        auto [childA, childB] = Crossover(parentA.function, parentB.function, rng_);
-        i += 2;
-
-        auto const FitnessA = Estemate(historicalData_, childA);
-        auto const FitnessB = Estemate(historicalData_, childB);
-        intermidiate.emplace_back(Candidate{std::move(childA), FitnessA});
-        intermidiate.emplace_back(Candidate{std::move(childB), FitnessB });
-    }
-
-    // Next gen
-    for(auto i = population_.begin(); i != population_.begin() + Elite; ++i)
-    {
-        auto it = Roulette(
+        i = SelectAndReplicate(
             i,
             population_.end(),
-            rng_,
-            [](auto& c) {return 1 / c.fitness; });
-        if(i != it)
-            std::swap(*i, *it);
+            std::back_inserter(newGeneration),
+            rng_);
+        i = SelectAndCrossover(
+            i,
+            population_.end(),
+            std::back_inserter(newGeneration),
+            rng_);
     }
 
-    std::for_each(
-        population_.begin(),
-        population_.begin() + Elite,
+    std::for_each(newGeneration.begin(),
+        newGeneration.end(),
         [&](auto& c)
         {
-            if (std::uniform_real_distribution<double>{0, 1}(rng_) < 0.05)
-            {
-                auto x = std::uniform_int_distribution<std::size_t>{1, c.function.Count() - 1}(rng_);
-                c.function.Replace(x, GenerateRandomExpr(rng_, historicalData_.DataCount(), 1));
-            }
+            // Control the growth
+            // weed out the large trees and replace them with new ones
+            if(1000 < c.function.Count())
+                c.function = GenerateRandomExpr(
+                    rng_,
+                    historicalData_.DataCount(),
+                    4);
         });
 
-    MoveRandom(
-        intermidiate.begin(),
-        intermidiate.end(),
-        population_.begin() + Elite,
-        population_.end(),
-        rng_);
+    std::for_each(
+        std::execution::par,
+        newGeneration.begin(),
+        newGeneration.end(),
+        [&](auto& c)
+        {
+            c.fitness = Estemate(historicalData_, c.function);
+        });
+    population_ = std::move(newGeneration);
 
     auto i = std::min_element(
+        std::execution::par,
         population_.begin(),
         population_.end(),
-        [](auto a, auto b) {return a.fitness < b.fitness; });
-
-    //if (i->fitness < bestFitness_)
+        [](auto const& a, auto const& b) {return a.fitness < b.fitness; });
+    
+    //std::cout << i->function << '\n';
+    if (i->fitness < bestFitness_)
     {
+        bestFunction_ = i->function;
         bestFitness_ = i->fitness;
-        std::cout
-            << "\n\n>>> " << iteration_ << ": "
-            << i->fitness
-            << " [" << i->function << "]\n";
     }
 }
 
@@ -320,7 +273,7 @@ double Estemate(PalletData& data, Expr const& expr)
         estemates.push_back(expr.Eval(data.BeginRowData(i)));
 
     auto const Total = std::transform_reduce(
-        std::execution::seq,
+        std::execution::par,
         estemates.cbegin(),
         estemates.cend(),
         data.BeginDemand(),
@@ -328,10 +281,18 @@ double Estemate(PalletData& data, Expr const& expr)
         std::plus<double>{},
         [](auto a, auto b) noexcept {return std::abs(a - b);});
 
-    return Total / data.RowCount();
+    auto const Estemation = Total / data.RowCount();
+    return std::isnan(Estemation)
+        ? std::numeric_limits<double>::infinity()
+        : Estemation;
 }
 
-bool GAPolicy::Terminate() noexcept
+bool GPPolicy::Terminate() noexcept
 {
     return 10000 < ++iteration_;
+}
+
+typename GPPolicy::Result GPPolicy::Complete()
+{
+    return {bestFunction_, bestFitness_};
 }

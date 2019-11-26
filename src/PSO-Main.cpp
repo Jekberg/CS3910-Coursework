@@ -88,17 +88,31 @@ void InitialiseRandomWeights(
     OutputIt last,
     RngT& rng);
 
-int main()
+int main(int argc, char const** argv)
 {
-    BasicPSOPolicy pso{
-        PalletData{"sample/cwk_train.csv"},
-        23};
-    auto result = Simulate(pso);
+    auto runPSO = [](char const* arg)
+    {
+        PalletData data{arg};
+        auto const Particles = static_cast<std::size_t>(
+            20 + std::sqrt(data.DataCount()));
+        BasicPSOPolicy pso{
+            std::move(data),
+            Particles};
+        auto result = Simulate(pso);
     
-    std::cout << result.fitness << '|';
-    for(auto&& x: result.position)
-        std::cout << ' ' << x;
-    std::cout << '\n';
+        std::cout << result.fitness << '|';
+        for(auto&& x: result.position)
+            std::cout << ' ' << x;
+        std::cout << '\n';
+    };
+
+    if(1 < argc)
+        std::for_each_n(
+            argv + 1,
+            argc - 1,
+            runPSO);
+    else
+        runPSO("sample/cwk_train.csv");
 }
 
 BasicPSOPolicy::BasicPSOPolicy(
