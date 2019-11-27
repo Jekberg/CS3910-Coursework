@@ -108,6 +108,7 @@ int main(int argc, char const** argv)
 
     if(1 < argc)
         std::for_each_n(
+            std::execution::seq,
             argv + 1,
             argc - 1,
             runPSO);
@@ -196,7 +197,7 @@ void BasicPSOPolicy::Step() noexcept
 
 bool BasicPSOPolicy::Terminate() noexcept
 {
-    return 10000 < ++iteration_;
+    return 100000 < ++iteration_;
 }
 
 typename BasicPSOPolicy::Result

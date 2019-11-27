@@ -5,35 +5,13 @@
 #include <execution>
 #include <iostream>
 
-
 double Estemate(PalletData& data, Expr const& expr);
 
-struct Candidate
-{
-    Expr function;
-    double fitness;
-};
-
 template<typename RngT>
-std::pair<Expr, Expr> Crossover(
-    Expr const& parentA,
-    Expr const& parentB,
-    RngT& rng)
-{
-    auto a{parentA};
-    auto b{parentB};
-
-    auto const CountA = parentA.Count();
-    auto const CountB = parentB.Count();
-
-    auto const NodeA = std::uniform_int_distribution<std::size_t>{1, CountA - 1}(rng);
-    auto const NodeB = std::uniform_int_distribution<std::size_t>{1, CountB - 1}(rng);
-
-    a.Replace(NodeA, parentB.SubExpr(NodeB));
-    b.Replace(NodeB, parentA.SubExpr(NodeA));
-
-    return {a, b};
-}
+Expr GenerateRandomExpr(
+    RngT& rng,
+    std::uint64_t argCount,
+    std::size_t maxDepth);
 
 class GPPolicy final
 {
@@ -53,15 +31,18 @@ public:
 
     void Step();
 
-    Result Complete();
-
     bool Terminate() noexcept;
+    
+    Result Complete();
 private:
     struct Candidate
     {
         Expr function;
         double fitness;
     };
+
+    constexpr static std::size_t MaxExpressionSize = 300;
+    constexpr static double MutationProbabillity = 0.05;
 
     std::vector<Candidate> population_;
 
@@ -136,7 +117,7 @@ private:
         if (it == last)
             return it;
 
-        if(std::uniform_real_distribution<>{0, 1}(rng) < 0.05)
+        if(std::uniform_real_distribution<>{0, 1}(rng) < MutationProbabillity)
         {
             auto& temp = it->function;
             using Distribution = std::uniform_int_distribution<std::size_t>;
@@ -150,22 +131,6 @@ private:
         return std::next(first);
     }
 };
-
-template<typename RngT>
-Expr GenerateRandomExpr(
-    RngT& rng,
-    std::uint64_t argCount,
-    std::size_t maxDepth)
-{
-    if (maxDepth == 0)
-        return std::uniform_real_distribution<>{ 0, 1 }(rng) < 0.5
-            ? Const(std::uniform_real_distribution<>{ 0, 100 }(rng))
-            : Arg(std::uniform_int_distribution<std::uint64_t>{0, argCount - 1}(rng));
-    else
-        return std::uniform_real_distribution<>{ 0, 1 }(rng) < 0.5
-            ? GenerateRandomExpr(rng, argCount, maxDepth - 1) + GenerateRandomExpr(rng, argCount, maxDepth - 1)
-            : GenerateRandomExpr(rng, argCount, maxDepth - 1) * GenerateRandomExpr(rng, argCount, maxDepth - 1);
-}
 
 int main(int argc, char const** argv)
 {
@@ -181,6 +146,7 @@ int main(int argc, char const** argv)
 
     if(1 < argc)
         std::for_each_n(
+            std::execution::seq,
             argv + 1,
             argc - 1,
             runGP);
@@ -235,11 +201,11 @@ void GPPolicy::Step()
         {
             // Control the growth
             // weed out the large trees and replace them with new ones
-            if(1000 < c.function.Count())
+            if(MaxExpressionSize < c.function.Count())
                 c.function = GenerateRandomExpr(
                     rng_,
                     historicalData_.DataCount(),
-                    4);
+                    2);
         });
 
     std::for_each(
@@ -266,6 +232,16 @@ void GPPolicy::Step()
     }
 }
 
+bool GPPolicy::Terminate() noexcept
+{
+    return 10000 < ++iteration_;
+}
+
+typename GPPolicy::Result GPPolicy::Complete()
+{
+    return {bestFunction_, bestFitness_};
+}
+
 double Estemate(PalletData& data, Expr const& expr)
 {
     std::vector<double> estemates{};
@@ -287,12 +263,18 @@ double Estemate(PalletData& data, Expr const& expr)
         : Estemation;
 }
 
-bool GPPolicy::Terminate() noexcept
+template<typename RngT>
+Expr GenerateRandomExpr(
+    RngT& rng,
+    std::uint64_t argCount,
+    std::size_t maxDepth)
 {
-    return 10000 < ++iteration_;
-}
-
-typename GPPolicy::Result GPPolicy::Complete()
-{
-    return {bestFunction_, bestFitness_};
+    if (maxDepth == 0)
+        return std::uniform_real_distribution<>{ 0, 1 }(rng) < 0.5
+            ? Const(std::uniform_real_distribution<>{ 0, 100 }(rng))
+            : Arg(std::uniform_int_distribution<std::uint64_t>{0, argCount - 1}(rng));
+    else
+        return std::uniform_real_distribution<>{ 0, 1 }(rng) < 0.5
+            ? GenerateRandomExpr(rng, argCount, maxDepth - 1) + GenerateRandomExpr(rng, argCount, maxDepth - 1)
+            : GenerateRandomExpr(rng, argCount, maxDepth - 1) * GenerateRandomExpr(rng, argCount, maxDepth - 1);
 }
