@@ -35,7 +35,7 @@ public:
     
     Result Complete();
 private:
-    struct Candidate
+    struct Individual
     {
         Expr function;
         double fitness;
@@ -47,7 +47,7 @@ private:
     constexpr static std::size_t MutationDepth = 1;
     constexpr static double MutationProbabillity = 0.05;
 
-    std::vector<Candidate> population_;
+    std::vector<Individual> population_;
 
     PalletData historicalData_;
 
@@ -95,8 +95,8 @@ private:
 
         auto childA = SubTreeCrossover(parentIt->function, std::next(parentIt)->function, rng);
         auto childB = SubTreeCrossover(std::next(parentIt)->function, parentIt->function, rng);
-        *(outIt++) = Candidate{std::move(childA), 0};
-        *(outIt++) = Candidate{std::move(childB), 0};
+        *(outIt++) = Individual{std::move(childA), 0};
+        *(outIt++) = Individual{std::move(childB), 0};
         return std::next(first);
     }
 
@@ -183,7 +183,7 @@ void GPPolicy::Initialise()
         population_.end(),
         [&]()
         {
-            Candidate c{
+            Individual c{
                 GenerateRandomExpr(
                     rng_,
                     historicalData_.DataCount(),
@@ -197,7 +197,7 @@ void GPPolicy::Initialise()
 
 void GPPolicy::Step()
 {
-    std::vector<Candidate> newGeneration{};
+    std::vector<Individual> newGeneration{};
     for(auto i = population_.begin(); i != population_.end();)
     {
         i = SelectAndReplicate(

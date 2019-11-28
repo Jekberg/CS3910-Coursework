@@ -12,141 +12,91 @@
 #include <string>
 #include <vector>
 
-// 35 pallets per trucks
-// Trucks = pallets / 35
-
 template<typename ForwardIt>
 double Estemate(PalletData& data, ForwardIt weightIt);
 
-template<
-    typename OutputIt,
-    typename RngT>
-void InitialiseRandomWeights(
-    OutputIt first,
-    OutputIt last,
-    RngT& rng,
-    double maxWeight = 1.0);
-
-class BasicPSOPolicy
+class PSOPalletDemandOptimisation
 {
 public:
+    constexpr static auto StartingFitness = std::numeric_limits<double>::infinity();
 
-    struct Result
+    explicit PSOPalletDemandOptimisation(PalletData const& historicalData);
+
+    void Init(Particles& particles);
+
+    void Update(
+        Particles& particles,
+        double* globalBestPosition,
+        PSOParameters const& params);
+
+    double Evaluate(typename Particles::Individual const& particle);
+    
+    std::size_t Dimension();
+
+    constexpr static bool Compare(double a, double b)
     {
-        std::vector<double> position;
-        double fitness;
-    };
-
-    struct Parameters
-    {
-        double inertia;
-        double cogitiveAttraction;
-        double socialAttraction;
-    };
-
-
-    explicit BasicPSOPolicy(
-        PalletData historicalData,
-        std::size_t populationSize,
-        std::size_t iterations = 100000,
-        Parameters parameters = {
-            1.0 / (2.0 * std::log(2)),
-            1.0 / 2.0 + std::log(2),
-            1.0 / 2.0 + std::log(2)});
-
-    void Initialise() noexcept;
-
-    void Step() noexcept;
-
-    bool Terminate() noexcept;
-
-    Result Complete() const noexcept;
-
+        return a < b;
+    }
 private:
-
-    Particles particles_;
-
     PalletData historicalData_;
-
-    Parameters params_;
 
     std::vector<std::minstd_rand> rngs_;
-
-    double globalBestFitness_ = std::numeric_limits<double>::infinity();
-    
-    std::vector<double> globalBestPosition_;
-
-    std::size_t iteration_{0};
-
-    std::size_t MaxIteration;
 };
 
-class HyperPSOPolicy final
+using PSOPalletDemandMinimisation = BasicPSO<PalletData, PSOPalletDemandOptimisation>;
+
+
+template<typename EnvT, typename PSOAlgorithmT>
+class PSOMetaOptimisation final
 {
 public:
-    struct Result
+    constexpr static auto StartingFitness = std::numeric_limits<double>::infinity();
+
+    explicit PSOMetaOptimisation(EnvT const& env);
+
+    void Init(Particles& particles);
+
+    void Update(
+        Particles& particles,
+        double* globalBestPosition,
+        PSOParameters const& params);
+
+    double Evaluate(typename Particles::Individual const& particle);
+
+    std::size_t Dimension()
     {
-        std::vector<double> position;
-        double fitness;
-    };
+        return 3; // PSOParameter members
+    }
 
-    explicit HyperPSOPolicy(
-        PalletData const& data);
-
-    void Initialise();
-
-    void Step();
-
-    bool Terminate();
-
-    Result Complete();
+    constexpr static bool Compare(double a, double b)
+    {
+        return a < b;
+    }
 private:
-    Particles particles_;
-
-    PalletData historicalData_;
+    EnvT env_;
 
     std::minstd_rand rng_;
-
-    double globalBestFitness_ = std::numeric_limits<double>::infinity();
-    
-    std::vector<double> globalBestPosition_;
-
-    std::size_t iteration_{0};
 };
 
-class PalletDemandOptimisation
-{
-public:
-    explicit PalletDemandOptimisation(PalletData const& historicalData);
-
-    void Init(Particles& particles)
-    {
-    }
-
-    void Adjust(Particles& particles)
-    {
-    }
-
-    double Evaluate(typename Particles::Candidate const& particle)
-    {
-    }
-};
+using MetaPSOPalletDemandMinimisation = BasicPSO<
+    PalletData,
+    PSOMetaOptimisation<PalletData, PSOPalletDemandMinimisation>>;
 
 int main(int argc, char const** argv)
 {
     auto runPSO = [](char const* arg)
     {
         PalletData data{arg};
-        HyperPSOPolicy hyperPSO{data};
-        auto HyperResult = Simulate(hyperPSO);
-
-        typename BasicPSOPolicy::Parameters params;
-        std::memcpy(&params, HyperResult.position.data(), sizeof(params));
-
+        MetaPSOPalletDemandMinimisation hyperPSO{data, 21, 100};
+        auto hyperResult = Simulate(hyperPSO);
+        
+        PSOParameters params;
+        std::memcpy(&params, hyperResult.position.data(), sizeof(params));
+        
         auto const Particles = static_cast<std::size_t>(
             20 + std::sqrt(data.DataCount()));
-        BasicPSOPolicy pso{
-            std::move(data),
+        PSOPalletDemandMinimisation pso{
+            data,
             Particles,
             100000,
             params};
@@ -157,7 +107,7 @@ int main(int argc, char const** argv)
             std::cout << ' ' << x;
 
         std::cout << "| (";
-        for(auto&& x: HyperResult.position)
+        for(auto&& x: hyperResult.position)
             std::cout << ' ' << x;
         std::cout << " )\n";
     };
@@ -172,189 +122,146 @@ int main(int argc, char const** argv)
         runPSO("sample/cwk_train.csv");
 }
 
-BasicPSOPolicy::BasicPSOPolicy(
-    PalletData historicalData,
-    std::size_t populationSize,
-    std::size_t iterations,
-    Parameters parameters)
-    : particles_{populationSize, historicalData.DataCount()}
-    , historicalData_{std::move(historicalData)}
-    , params_{parameters}
-    , rngs_(populationSize)
-    , MaxIteration{iterations}
+PSOPalletDemandOptimisation::PSOPalletDemandOptimisation(PalletData const& historicalData)
+    : historicalData_{ historicalData }
 {
 }
 
-void BasicPSOPolicy::Initialise() noexcept
+void PSOPalletDemandOptimisation::Init(Particles& particles)
 {
-    auto const count = particles_.VectorSize();
+    auto const Count = particles.VectorSize();
 
     std::random_device rand{};
+    rngs_.resize(particles.PopulationSize());
     std::for_each(rngs_.begin(), rngs_.end(), [&](auto& rng)
     {
         rng.seed(rand());
     });
 
-    particles_.ForAll([&](auto&& p)
+    particles.ForAll([&](auto&& p)
     {
-        InitialiseRandomWeights(p.position, p.position + count, rngs_[p.id]);
-        std::copy(p.position, p.position + count, p.bestPosition);
-        std::fill(p.velocity, p.velocity + count, 0.0);
+        std::generate(
+            p.position,
+            p.position + Count,
+            [&]()
+            {
+                using Distribution = std::uniform_real_distribution<>;
+                return Distribution{0, 1}(rngs_[p.id]);
+            });
+        std::copy(p.position, p.position + Count, p.bestPosition);
+        std::fill(p.velocity, p.velocity + Count, 0.0);
 
-        p.fitness = Estemate(historicalData_, p.position);
+        p.fitness = Evaluate(p);
         p.bestFitness = p.fitness;
     });
 }
 
-void BasicPSOPolicy::Step() noexcept
+void PSOPalletDemandOptimisation::Update(
+    Particles& particles,
+    double* globalBestPosition,
+    PSOParameters const& params)
 {
-    std::vector<double> bestPosition;
-    auto globalBestCost = particles_.FindMin(
-        std::back_inserter(bestPosition),
-        [](auto const& a, auto const& b)
-        {
-            return a.fitness < b.fitness;
-        });
-
-    if(globalBestCost < globalBestFitness_)
-    {
-        globalBestFitness_ = globalBestCost;
-        globalBestPosition_ =  std::move(bestPosition);
-    }
-
-    auto const count = particles_.VectorSize();
-    particles_.ForAll([&](auto&& p)
+    auto const Count = particles.VectorSize();
+    particles.ForAll([&](auto&& p)
     {
         NextPosition(
             p.position,
-            p.position + count,
+            p.position + Count,
             p.bestPosition,
-            globalBestPosition_.data(),
+            globalBestPosition,
             p.velocity,
             p.position,
             rngs_[p.id],
-            params_.inertia,
-            params_.cogitiveAttraction,
-            params_.socialAttraction);
-        
+            params);
+
         std::for_each(
             p.position,
-            p.position + count,
+            p.position + Count,
             [](auto& x)
             {
-                if(x < 0)
-                    x = 0; 
+                if (x < 0)
+                    x = 0;
             });
-
-        p.fitness = Estemate(historicalData_, p.position);
-        if (p.fitness < p.bestFitness)
-        {
-            p.bestFitness = p.fitness;
-            std::copy(p.position, p.position + count, p.bestPosition);
-        }
     });
 }
 
-bool BasicPSOPolicy::Terminate() noexcept
+double PSOPalletDemandOptimisation::Evaluate(typename Particles::Individual const& particle)
 {
-    return MaxIteration < ++iteration_;
+    return Estemate(historicalData_, particle.position);
 }
 
-typename BasicPSOPolicy::Result
-BasicPSOPolicy::Complete()
-    const noexcept
+std::size_t PSOPalletDemandOptimisation::Dimension()
 {
-    return {globalBestPosition_, globalBestFitness_};
+    return historicalData_.DataCount();
 }
 
-HyperPSOPolicy::HyperPSOPolicy(PalletData const& data)
-    : particles_{21, 3}
-    , historicalData_{data}
+template<typename EnvT, typename PSOAlgorithmT>
+PSOMetaOptimisation<EnvT, PSOAlgorithmT>::PSOMetaOptimisation(EnvT const& env)
+    : env_{env}
 {
 }
 
-void HyperPSOPolicy::Initialise()
+template<typename EnvT, typename PSOAlgorithmT>
+void PSOMetaOptimisation<EnvT, PSOAlgorithmT>::Init(typename Particles& particles)
 {
-    auto const count = particles_.VectorSize();
-
+    auto const count = particles.VectorSize();
     rng_.seed(std::random_device{}());
-    particles_.ForEach([&](auto&& p)
+    particles.ForAll([&](auto&& p)
     {
-        InitialiseRandomWeights(p.position, p.position + count, rng_, 2);
+        std::generate(
+            p.position,
+            p.position + count,
+            [&]()
+            {
+                using Distribution = std::uniform_real_distribution<>;
+                return Distribution{ 0, 2 }(rng_);
+            });
         std::copy(p.position, p.position + count, p.bestPosition);
         std::fill(p.velocity, p.velocity + count, 0.0);
 
-        typename BasicPSOPolicy::Parameters params;
-        std::memcpy(&params, p.position, sizeof(typename BasicPSOPolicy::Parameters));
-        BasicPSOPolicy subPSO{historicalData_, 20, 100, params};
-        auto const SubResult = Simulate(subPSO);
-        p.fitness = SubResult.fitness;
+        p.fitness = Evaluate(p);
         p.bestFitness = p.fitness;
     });
 }
 
-void HyperPSOPolicy::Step()
+template<typename EnvT, typename PSOAlgorithmT>
+void PSOMetaOptimisation<EnvT, PSOAlgorithmT>::Update(
+    Particles& particles,
+    double* globalBestPosition,
+    PSOParameters const& params)
 {
-    std::vector<double> bestPosition;
-    auto globalBestCost = particles_.FindMin(
-        std::back_inserter(bestPosition),
-        [](auto const& a, auto const& b)
-        {
-            return a.fitness < b.fitness;
-        });
-
-    if(globalBestCost < globalBestFitness_)
-    {
-        globalBestFitness_ = globalBestCost;
-        globalBestPosition_ =  std::move(bestPosition);
-    }
-
-    auto const count = particles_.VectorSize();
-    particles_.ForEach([&](auto&& p)
+    auto const Count = particles.VectorSize();
+    particles.ForEach([&](auto&& p)
     {
         NextPosition(
             p.position,
-            p.position + count,
+            p.position + Count,
             p.bestPosition,
-            globalBestPosition_.data(),
+            globalBestPosition,
             p.velocity,
             p.position,
             rng_,
-            1.0 / (2.0 * std::log(2)),
-            1.0 / 2.0 + std::log(2),
-            1.0 / 2.0 + std::log(2));
-        
+            params);
+
         std::for_each(
             p.position,
-            p.position + count,
+            p.position + Count,
             [](auto& x)
             {
-                if(x < 0)
-                    x = 0; 
+                if (x < 0)
+                    x = 0;
             });
-
-        typename BasicPSOPolicy::Parameters params;
-        std::memcpy(&params, p.position, sizeof(typename BasicPSOPolicy::Parameters));
-        BasicPSOPolicy subPSO{historicalData_, 20, 100, params};
-        auto const SubResult = Simulate(subPSO);
-
-        p.fitness = SubResult.fitness;
-        if (p.fitness < p.bestFitness)
-        {
-            p.bestFitness = p.fitness;
-            std::copy(p.position, p.position + count, p.bestPosition);
-        }
     });
 }
 
-bool HyperPSOPolicy::Terminate()
+template<typename EnvT, typename PSOAlgorithmT>
+double PSOMetaOptimisation<EnvT, PSOAlgorithmT>::Evaluate(typename Particles::Individual const& particle)
 {
-    return 100 < ++iteration_;
-}
-
-typename HyperPSOPolicy:: Result HyperPSOPolicy::Complete()
-{
-    return {globalBestPosition_, globalBestFitness_};
+    PSOParameters params;
+    std::memcpy(&params, particle.position, sizeof(params));
+    PSOAlgorithmT sub{env_, 20, 100, params};
+    auto subResult = Simulate(sub);
+    return subResult.fitness;
 }
 
 template<typename ForwardIt>
@@ -381,20 +288,4 @@ double Estemate(PalletData& data, ForwardIt weightIt)
         [](auto a, auto b) noexcept {return std::abs(a - b); });
 
     return Total / data.RowCount();
-}
-
-template<
-    typename OutputIt,
-    typename RngT>
-void InitialiseRandomWeights(
-    OutputIt first,
-    OutputIt last,
-    RngT& rng,
-    double maxWeight)
-{
-    std::uniform_real_distribution<double> d{ 0.0, maxWeight };
-    std::generate(
-        first,
-        last,
-        [&]() { return d(rng); });
 }

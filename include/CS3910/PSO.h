@@ -4,10 +4,48 @@
 #include <execution>
 #include <random>
 
+struct PSOParameters
+{
+    double inertia;
+    double cognitiveAttraction;
+    double socialAttraction;
+};
+
+template<
+    typename ForwardPositionIt,
+    typename InputVelocityIt,
+    typename OutputVelocityIt,
+    typename RngT>
+void NextVelocity(
+    ForwardPositionIt firstX,
+    ForwardPositionIt lastX,
+    ForwardPositionIt pBestIt,
+    ForwardPositionIt gBestIt,
+    InputVelocityIt vIt,
+    OutputVelocityIt nextVIt,
+    RngT& rng,
+    PSOParameters const& params)
+    noexcept;
+
+template<
+    typename ForwardPositionIt,
+    typename ForwardVelocityIt,
+    typename OutputPositionIt,
+    typename RngT>
+void NextPosition(
+    ForwardPositionIt firstX,
+    ForwardPositionIt lastX,
+    ForwardPositionIt pBestIt,
+    ForwardPositionIt gBestIt,
+    ForwardVelocityIt vIt,
+    OutputPositionIt nextPositionIt,
+    RngT& rng,
+    PSOParameters const& params);
+
 class Particles
 {
 public:
-    struct Candidate
+    struct Individual
     {
         std::size_t id;
         double* position;
@@ -27,21 +65,12 @@ public:
     template<typename Consumer>
     void ForAll(Consumer&& consumer);
 
-    template<typename OutputIt, typename Compare>
-    double FindMin(OutputIt outIt, Compare&& compare)
-    {
-        auto it = std::min_element(
-            population_.begin(),
-            population_.end(),
-            compare);
-        std::copy(it->position, it->position + vectorSize_, outIt);
-        return it->fitness;
-    }
-
     constexpr std::size_t VectorSize() const noexcept;
 
     std::size_t PopulationSize() const noexcept;
 
+    template<typename Compare>
+    Individual FindBest(Compare&& compare);
 private:
     std::vector<double> positions_;
 
@@ -53,7 +82,7 @@ private:
 
     std::vector<double> bestFitness_;
 
-    std::vector<Candidate> population_;
+    std::vector<Individual> population_;
 
     std::size_t populationSize_;
 
@@ -75,7 +104,7 @@ Particles::Particles(
 
     for (std::size_t i{}; i != populationSize_; ++i)
     {
-        population_.emplace_back(Candidate{
+        population_.emplace_back(Individual{
             i,
             positions_.data() + vectorSize * i,
             velocities_.data() + vectorSize * i,
@@ -114,8 +143,120 @@ std::size_t Particles::PopulationSize() const noexcept
     return population_.size();
 }
 
+template<typename Compare>
+Particles::Individual Particles::FindBest(Compare&& compare)
+{
+    auto it = std::min_element(
+        population_.begin(),
+        population_.end(),
+        [&](auto&& a, auto&& b) {return compare(a.bestFitness, b.bestFitness); });
+    return *it;
+}
+
+template<typename EnvT, typename ControlPolicy>
+class BasicPSO final : private ControlPolicy
+{
+public:
+    struct Result
+    {
+        std::vector<double> position;
+        double fitness;
+    };
+
+    explicit BasicPSO(
+        EnvT const& env,
+        std::size_t populationSize,
+        std::size_t iterations = 100000,
+        PSOParameters parameters = {
+            1.0 / (2.0 * std::log(2)),
+            1.0 / 2.0 + std::log(2),
+            1.0 / 2.0 + std::log(2) });
+
+    void Initialise() noexcept;
+
+    void Step();
+
+    bool Terminate() noexcept;
+
+    Result Complete() const noexcept;
+
+private:
+    Particles particles_;
+
+    PSOParameters params_;
+
+    double globalBestFitness_ = ControlPolicy::StartingFitness;
+
+    std::vector<double> globalBestPosition_;
+
+    std::size_t iteration_{};
+
+    std::size_t const MaxIteration_;
+};
+
+template<typename EnvT, typename ControlPolicy>
+BasicPSO<EnvT, ControlPolicy>::BasicPSO(
+    EnvT const& env,
+    std::size_t populationSize,
+    std::size_t iterations,
+    PSOParameters parameters)
+    : ControlPolicy{ env }
+    , particles_{ populationSize, ControlPolicy::Dimension() }
+    , params_{ parameters }
+    , MaxIteration_{ iterations }
+{
+}
+
+template<typename EnvT, typename ControlPolicy>
+void BasicPSO<EnvT, ControlPolicy>::Initialise() noexcept
+{
+    globalBestFitness_ = ControlPolicy::StartingFitness;
+    iteration_ = 0;
+    ControlPolicy::Init(particles_);
+}
+
+template<typename EnvT, typename ControlPolicy>
+void BasicPSO<EnvT, ControlPolicy>::Step()
+{
+    auto globalBest = particles_.FindBest(ControlPolicy::Compare);
+    auto const Count = particles_.VectorSize();
+    if (ControlPolicy::Compare(globalBest.bestFitness, globalBestFitness_))
+    {
+        globalBestFitness_ = globalBest.bestFitness;
+        globalBestPosition_.assign(
+            globalBest.bestPosition,
+            globalBest.bestPosition + Count);
+    }
+
+    ControlPolicy::Update(particles_, globalBestPosition_.data(), params_);
+
+    particles_.ForAll([&](auto&& p)
+    {
+        p.fitness = ControlPolicy::Evaluate(p);
+        if (ControlPolicy::Compare(p.fitness, p.bestFitness))
+        {
+            p.bestFitness = p.fitness;
+            std::copy(p.position, p.position + Count, p.bestPosition);
+        }
+    });
+}
+
+
+template<typename EnvT, typename ControlPolicy>
+bool BasicPSO<EnvT, ControlPolicy>::Terminate() noexcept
+{
+    return MaxIteration_ < ++iteration_;
+}
+
+template<typename EnvT, typename ControlPolicy>
+typename BasicPSO<EnvT, ControlPolicy>::Result
+BasicPSO<EnvT, ControlPolicy>::Complete()
+    const noexcept
+{
+    return { globalBestPosition_, globalBestFitness_ };
+}
+
 template<
-    typename RealT,
     typename ForwardPositionIt,
     typename InputVelocityIt,
     typename OutputVelocityIt,
@@ -128,20 +269,17 @@ void NextVelocity(
     InputVelocityIt vIt,
     OutputVelocityIt nextVIt,
     RngT& rng,
-    RealT inertia,
-    RealT cognitiveAttraction,
-    RealT socialAttraction)
+    PSOParameters const& params)
     noexcept
 {
     std::uniform_real_distribution<> d{ 0.0, 1.0 };
     for(; firstX != lastX; ++firstX, ++pBestIt, ++gBestIt, ++vIt, ++nextVIt)
-        *nextVIt = inertia * *vIt
-            + cognitiveAttraction * d(rng) * (*gBestIt - *firstX)
-            + socialAttraction * d(rng) * (*pBestIt - *firstX);
+        *nextVIt = params.inertia * *vIt
+            + params.cognitiveAttraction * d(rng) * (*gBestIt - *firstX)
+            + params.socialAttraction * d(rng) * (*pBestIt - *firstX);
 }
 
 template<
-    typename RealT,
     typename ForwardPositionIt,
     typename ForwardVelocityIt,
     typename OutputPositionIt,
@@ -154,9 +292,7 @@ void NextPosition(
     ForwardVelocityIt vIt,
     OutputPositionIt nextPositionIt,
     RngT& rng,
-    RealT inertia,
-    RealT cognitiveAttraction,
-    RealT socialAttraction)
+    PSOParameters const& params)
 {
     NextVelocity(
         firstX,
@@ -166,9 +302,7 @@ void NextPosition(
         vIt,
         vIt,
         rng,
-        inertia,
-        cognitiveAttraction,
-        socialAttraction);
+        params);
 
     std::transform(
         firstX,
