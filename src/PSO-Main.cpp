@@ -15,6 +15,18 @@
 // 35 pallets per trucks
 // Trucks = pallets / 35
 
+template<typename ForwardIt>
+double Estemate(PalletData& data, ForwardIt weightIt);
+
+template<
+    typename OutputIt,
+    typename RngT>
+void InitialiseRandomWeights(
+    OutputIt first,
+    OutputIt last,
+    RngT& rng,
+    double maxWeight = 1.0);
+
 class BasicPSOPolicy
 {
 public:
@@ -102,17 +114,23 @@ private:
     std::size_t iteration_{0};
 };
 
-template<typename ForwardIt>
-double Estemate(PalletData& data, ForwardIt weightIt);
+class PalletDemandOptimisation
+{
+public:
+    explicit PalletDemandOptimisation(PalletData const& historicalData);
 
-template<
-    typename OutputIt,
-    typename RngT>
-void InitialiseRandomWeights(
-    OutputIt first,
-    OutputIt last,
-    RngT& rng,
-    double maxWeight = 1.0);
+    void Init(Particles& particles)
+    {
+    }
+
+    void Adjust(Particles& particles)
+    {
+    }
+
+    double Evaluate(typename Particles::Candidate const& particle)
+    {
+    }
+};
 
 int main(int argc, char const** argv)
 {
