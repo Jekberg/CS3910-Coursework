@@ -42,6 +42,9 @@ private:
     };
 
     constexpr static std::size_t MaxExpressionSize = 300;
+    constexpr static std::size_t TournamentSize = 5;
+    constexpr static std::size_t InitialDepth = 1;
+    constexpr static std::size_t MutationDepth = 1;
     constexpr static double MutationProbabillity = 0.05;
 
     std::vector<Candidate> population_;
@@ -72,7 +75,6 @@ private:
 
         // The location where the parents can be found
         auto parentIt = first;
-        std::size_t const TournamentSize = 5;
 
         // Find the first parent using a tornament
         auto i = SampleGroup(first, last, TournamentSize, rng);
@@ -122,7 +124,12 @@ private:
             auto& temp = it->function;
             using Distribution = std::uniform_int_distribution<std::size_t>;
             auto const Id = Distribution{1, temp.Count() - 1}(rng);
-            temp.Replace(Id, GenerateRandomExpr(rng, historicalData_.DataCount(), 2));
+            temp.Replace(
+                Id,
+                GenerateRandomExpr(
+                    rng,
+                    historicalData_.DataCount(),
+                    MutationDepth));
         }
 
         *outIt = std::move(*it);
@@ -166,12 +173,22 @@ GPPolicy::GPPolicy(
 void GPPolicy::Initialise()
 {
     rng_.seed(std::random_device{}());
+    auto& x = population_.front().function;
+    x = Const(0);
+    for(std::size_t i{}; i < historicalData_.DataCount(); ++i)
+        x = x + Arg(i);
+
     std::generate(
-        population_.begin(),
+        population_.begin() + 1,
         population_.end(),
         [&]()
         {
-            Candidate c{ GenerateRandomExpr(rng_, historicalData_.DataCount(), 1) , 0.0};
+            Candidate c{
+                GenerateRandomExpr(
+                    rng_,
+                    historicalData_.DataCount(),
+                    InitialDepth),
+                0.0};
             c.fitness = Estemate(historicalData_, c.function);
             return c;
         });

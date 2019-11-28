@@ -25,10 +25,22 @@ public:
         double fitness;
     };
 
+    struct Parameters
+    {
+        double inertia;
+        double cogitiveAttraction;
+        double socialAttraction;
+    };
+
 
     explicit BasicPSOPolicy(
         PalletData historicalData,
-        std::size_t populationSize);
+        std::size_t populationSize,
+        std::size_t iterations = 100000,
+        Parameters parameters = {
+            1.0 / (2.0 * std::log(2)),
+            1.0 / 2.0 + std::log(2),
+            1.0 / 2.0 + std::log(2)});
 
     void Initialise() noexcept;
 
@@ -44,6 +56,8 @@ private:
 
     PalletData historicalData_;
 
+    Parameters params_;
+
     std::vector<std::minstd_rand> rngs_;
 
     double globalBestFitness_ = std::numeric_limits<double>::infinity();
@@ -51,12 +65,21 @@ private:
     std::vector<double> globalBestPosition_;
 
     std::size_t iteration_{0};
+
+    std::size_t MaxIteration;
 };
 
 class HyperPSOPolicy final
 {
 public:
-    explicit HyperPSOPolicy();
+    struct Result
+    {
+        std::vector<double> position;
+        double fitness;
+    };
+
+    explicit HyperPSOPolicy(
+        PalletData const& data);
 
     void Initialise();
 
@@ -64,11 +87,13 @@ public:
 
     bool Terminate();
 
-    void Complete();
+    Result Complete();
 private:
     Particles particles_;
 
     PalletData historicalData_;
+
+    std::minstd_rand rng_;
 
     double globalBestFitness_ = std::numeric_limits<double>::infinity();
     
@@ -86,24 +111,37 @@ template<
 void InitialiseRandomWeights(
     OutputIt first,
     OutputIt last,
-    RngT& rng);
+    RngT& rng,
+    double maxWeight = 1.0);
 
 int main(int argc, char const** argv)
 {
     auto runPSO = [](char const* arg)
     {
         PalletData data{arg};
+        HyperPSOPolicy hyperPSO{data};
+        auto HyperResult = Simulate(hyperPSO);
+
+        typename BasicPSOPolicy::Parameters params;
+        std::memcpy(&params, HyperResult.position.data(), sizeof(params));
+
         auto const Particles = static_cast<std::size_t>(
             20 + std::sqrt(data.DataCount()));
         BasicPSOPolicy pso{
             std::move(data),
-            Particles};
+            Particles,
+            100000,
+            params};
         auto result = Simulate(pso);
     
         std::cout << result.fitness << '|';
         for(auto&& x: result.position)
             std::cout << ' ' << x;
-        std::cout << '\n';
+
+        std::cout << "| (";
+        for(auto&& x: HyperResult.position)
+            std::cout << ' ' << x;
+        std::cout << " )\n";
     };
 
     if(1 < argc)
@@ -118,10 +156,14 @@ int main(int argc, char const** argv)
 
 BasicPSOPolicy::BasicPSOPolicy(
     PalletData historicalData,
-    std::size_t populationSize)
+    std::size_t populationSize,
+    std::size_t iterations,
+    Parameters parameters)
     : particles_{populationSize, historicalData.DataCount()}
     , historicalData_{std::move(historicalData)}
+    , params_{parameters}
     , rngs_(populationSize)
+    , MaxIteration{iterations}
 {
 }
 
@@ -135,7 +177,7 @@ void BasicPSOPolicy::Initialise() noexcept
         rng.seed(rand());
     });
 
-    particles_.ForEach([&](auto&& p)
+    particles_.ForAll([&](auto&& p)
     {
         InitialiseRandomWeights(p.position, p.position + count, rngs_[p.id]);
         std::copy(p.position, p.position + count, p.bestPosition);
@@ -173,9 +215,9 @@ void BasicPSOPolicy::Step() noexcept
             p.velocity,
             p.position,
             rngs_[p.id],
-            1.0 / (2.0 * std::log(2)),
-            1.0 / 2.0 + std::log(2),
-            1.0 / 2.0 + std::log(2));
+            params_.inertia,
+            params_.cogitiveAttraction,
+            params_.socialAttraction);
         
         std::for_each(
             p.position,
@@ -197,12 +239,102 @@ void BasicPSOPolicy::Step() noexcept
 
 bool BasicPSOPolicy::Terminate() noexcept
 {
-    return 100000 < ++iteration_;
+    return MaxIteration < ++iteration_;
 }
 
 typename BasicPSOPolicy::Result
 BasicPSOPolicy::Complete()
     const noexcept
+{
+    return {globalBestPosition_, globalBestFitness_};
+}
+
+HyperPSOPolicy::HyperPSOPolicy(PalletData const& data)
+    : particles_{21, 3}
+    , historicalData_{data}
+{
+}
+
+void HyperPSOPolicy::Initialise()
+{
+    auto const count = particles_.VectorSize();
+
+    rng_.seed(std::random_device{}());
+    particles_.ForEach([&](auto&& p)
+    {
+        InitialiseRandomWeights(p.position, p.position + count, rng_, 2);
+        std::copy(p.position, p.position + count, p.bestPosition);
+        std::fill(p.velocity, p.velocity + count, 0.0);
+
+        typename BasicPSOPolicy::Parameters params;
+        std::memcpy(&params, p.position, sizeof(typename BasicPSOPolicy::Parameters));
+        BasicPSOPolicy subPSO{historicalData_, 20, 100, params};
+        auto const SubResult = Simulate(subPSO);
+        p.fitness = SubResult.fitness;
+        p.bestFitness = p.fitness;
+    });
+}
+
+void HyperPSOPolicy::Step()
+{
+    std::vector<double> bestPosition;
+    auto globalBestCost = particles_.FindMin(
+        std::back_inserter(bestPosition),
+        [](auto const& a, auto const& b)
+        {
+            return a.fitness < b.fitness;
+        });
+
+    if(globalBestCost < globalBestFitness_)
+    {
+        globalBestFitness_ = globalBestCost;
+        globalBestPosition_ =  std::move(bestPosition);
+    }
+
+    auto const count = particles_.VectorSize();
+    particles_.ForEach([&](auto&& p)
+    {
+        NextPosition(
+            p.position,
+            p.position + count,
+            p.bestPosition,
+            globalBestPosition_.data(),
+            p.velocity,
+            p.position,
+            rng_,
+            1.0 / (2.0 * std::log(2)),
+            1.0 / 2.0 + std::log(2),
+            1.0 / 2.0 + std::log(2));
+        
+        std::for_each(
+            p.position,
+            p.position + count,
+            [](auto& x)
+            {
+                if(x < 0)
+                    x = 0; 
+            });
+
+        typename BasicPSOPolicy::Parameters params;
+        std::memcpy(&params, p.position, sizeof(typename BasicPSOPolicy::Parameters));
+        BasicPSOPolicy subPSO{historicalData_, 20, 100, params};
+        auto const SubResult = Simulate(subPSO);
+
+        p.fitness = SubResult.fitness;
+        if (p.fitness < p.bestFitness)
+        {
+            p.bestFitness = p.fitness;
+            std::copy(p.position, p.position + count, p.bestPosition);
+        }
+    });
+}
+
+bool HyperPSOPolicy::Terminate()
+{
+    return 100 < ++iteration_;
+}
+
+typename HyperPSOPolicy:: Result HyperPSOPolicy::Complete()
 {
     return {globalBestPosition_, globalBestFitness_};
 }
@@ -239,9 +371,10 @@ template<
 void InitialiseRandomWeights(
     OutputIt first,
     OutputIt last,
-    RngT& rng)
+    RngT& rng,
+    double maxWeight)
 {
-    std::uniform_real_distribution<double> d{ 0.0, 1.0 };
+    std::uniform_real_distribution<double> d{ 0.0, maxWeight };
     std::generate(
         first,
         last,
