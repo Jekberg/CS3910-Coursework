@@ -47,7 +47,7 @@ using PSOPalletDemandMinimisation = BasicPSO<PalletData, PSOPalletDemandOptimisa
 
 
 template<typename EnvT, typename PSOAlgorithmT>
-class PSOMetaOptimisation final
+class PSOMetaOptimisation
 {
 public:
     constexpr static auto StartingFitness = std::numeric_limits<double>::infinity();
@@ -202,7 +202,7 @@ PSOMetaOptimisation<EnvT, PSOAlgorithmT>::PSOMetaOptimisation(EnvT const& env)
 }
 
 template<typename EnvT, typename PSOAlgorithmT>
-void PSOMetaOptimisation<EnvT, PSOAlgorithmT>::Init(typename Particles& particles)
+void PSOMetaOptimisation<EnvT, PSOAlgorithmT>::Init(Particles& particles)
 {
     auto const count = particles.VectorSize();
     rng_.seed(std::random_device{}());

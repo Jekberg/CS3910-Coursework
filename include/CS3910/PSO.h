@@ -154,7 +154,7 @@ Particles::Individual Particles::FindBest(Compare&& compare)
 }
 
 template<typename EnvT, typename ControlPolicy>
-class BasicPSO final : private ControlPolicy
+class BasicPSO: private ControlPolicy
 {
 public:
     struct Result
@@ -232,7 +232,7 @@ void BasicPSO<EnvT, ControlPolicy>::Step()
 
     particles_.ForAll([&](auto&& p)
     {
-        p.fitness = ControlPolicy::Evaluate(p);
+        p.fitness = this->Evaluate(p); // ControlPolicy::Evaluate issues a compiler bugon GCC
         if (ControlPolicy::Compare(p.fitness, p.bestFitness))
         {
             p.bestFitness = p.fitness;
