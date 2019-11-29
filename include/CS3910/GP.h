@@ -15,8 +15,44 @@ namespace internal
         LoadConst,
         LoadArg,
         Add,
-        Mul
+        Sub,
+        Mul,
+        Div
     };
+
+    int PrecOf(std::uint64_t op)
+    {
+        switch(op)
+        {
+        case OpCode::LoadConst:
+        case OpCode::LoadArg:
+            return std::numeric_limits<int>::max();
+        case OpCode::Add:
+        case OpCode::Sub:
+        case OpCode::Mul:
+        case OpCode::Div:
+            return op;
+        }
+
+        return -1;
+    }
+
+    std::ostream& PrintInfix(std::uint64_t op, std::ostream& outs)
+    {
+        switch (op)
+        {
+        case OpCode::Add:
+            return outs << " + ";
+        case OpCode::Sub:
+            return outs << " - ";
+        case OpCode::Mul:
+            return outs << " * ";
+        case OpCode::Div:
+            return outs << " / ";
+        }
+
+        return outs;
+    }
 
     template<typename ForwardIt>
     ForwardIt EndOfExpr(ForwardIt first, ForwardIt last)
@@ -28,7 +64,9 @@ namespace internal
         case OpCode::LoadArg:
             return ++first;
         case OpCode::Add:
+        case OpCode::Sub:
         case OpCode::Mul:
+        case OpCode::Div:
             auto i = EndOfExpr(first, last);
             i = EndOfExpr(i, last);
             return i;
@@ -58,44 +96,25 @@ namespace internal
                 auto [rhsVal, rhsEnd] = EvalExpr(lhsEnd, last, argIt);
                 return {lhsVal + rhsVal, rhsEnd};
             }
+        case OpCode::Sub:
+            {
+                auto [lhsVal, lhsEnd] = EvalExpr(std::next(first), last, argIt);
+                auto [rhsVal, rhsEnd] = EvalExpr(lhsEnd, last, argIt);
+                return {lhsVal - rhsVal, rhsEnd};
+            }
         case OpCode::Mul:
             {
                 auto [lhsVal, lhsEnd] = EvalExpr(std::next(first), last, argIt);
                 auto [rhsVal, rhsEnd] = EvalExpr(lhsEnd, last, argIt);
                 return {lhsVal * rhsVal, rhsEnd};
             }
-        }
-
-        // Unreachable!!
-        return {0.0, last};
-    }
-
-    template<typename ForwardIt, typename RandomIt>
-    std::pair<double, ForwardIt> EvalExpr(ForwardIt first, ForwardIt last)
-    {
-        assert(first != last && "Cannot evaluate an empty Expr");
-        switch (*first)
-        {
-        case OpCode::LoadConst:
+        case OpCode::Div:
             {
-                double temp;
-                std::memcpy(&temp, &*std::next(first), 8);
-                return {temp, std::next(first, 2)};
-            }
-        case OpCode::LoadArg:
-            // Not allowed...
-            return {0.0, first};
-        case OpCode::Add:
-            {
-                auto [lhsVal, lhsEnd] = EvalExpr(std::next(first), last);
-                auto [rhsVal, rhsEnd] = EvalExpr(lhsEnd, last);
-                return {lhsVal + rhsVal, rhsEnd};
-            }
-        case OpCode::Mul:
-            {
-                auto [lhsVal, lhsEnd] = EvalExpr(std::next(first), last);
-                auto [rhsVal, rhsEnd] = EvalExpr(lhsEnd, last);
-                return {lhsVal * rhsVal, rhsEnd};
+                auto [lhsVal, lhsEnd] = EvalExpr(std::next(first), last, argIt);
+                auto [rhsVal, rhsEnd] = EvalExpr(lhsEnd, last, argIt);
+                if(rhsVal == 0.0)
+                    return {std::numeric_limits<double>::infinity(), rhsEnd};
+                return {lhsVal / rhsVal, rhsEnd};
             }
         }
 
@@ -124,27 +143,24 @@ namespace internal
             return std::next(first, 2);
             
         case OpCode::Add:
-            {
-                auto lhsEnd = PrintExpr(std::next(first), last, outs);
-                outs << " + ";
-                return PrintExpr(lhsEnd, last, outs);
-                
-            }
+        case OpCode::Sub:
         case OpCode::Mul:
+        case OpCode::Div:
             {
+                auto const Op = *first;
                 ++first;
-                if(*first == internal::OpCode::Add)
+                if(PrecOf(*first) < PrecOf(Op))
                     outs << '(';
                 auto lhsEnd = PrintExpr(first, last, outs);
-                if (*first == internal::OpCode::Add)
+                if (PrecOf(*first) < PrecOf(Op))
                     outs << ')';
                 
-                outs << " * ";
+                PrintInfix(Op, outs);
                 
-                if(*lhsEnd == internal::OpCode::Add)
+                if(PrecOf(*lhsEnd) < PrecOf(Op))
                     outs << '(';
                 auto rhsEnd = PrintExpr(lhsEnd, last, outs);
-                if (*lhsEnd == internal::OpCode::Add)
+                if (PrecOf(*lhsEnd) < PrecOf(Op))
                     outs << ')';
                 return rhsEnd;
             }
@@ -166,7 +182,9 @@ namespace internal
                 first += 2;
                 break;
             case OpCode::Add:
+            case OpCode::Sub:
             case OpCode::Mul:
+            case OpCode::Div:
                 ++first;
                 break;
             }
@@ -192,7 +210,9 @@ namespace internal
                 first += 2;
                 break;
             case OpCode::Add:
+            case OpCode::Sub:
             case OpCode::Mul:
+            case OpCode::Div:
                 ++first;
                 break;
             }
@@ -207,7 +227,9 @@ class Expr final
     friend Expr Const(double constVal);
     friend Expr Arg(std::uint64_t argId);
     friend Expr operator+(Expr const& lhs, Expr const& rhs);
+    friend Expr operator-(Expr const& lhs, Expr const& rhs);
     friend Expr operator*(Expr const& lhs, Expr const& rhs);
+    friend Expr operator/(Expr const& lhs, Expr const& rhs);
 public:
     explicit Expr() = default;
 
@@ -322,9 +344,19 @@ Expr operator+(Expr const& lhs, Expr const& rhs)
     return Expr(internal::OpCode::Add, lhs, rhs);
 }
 
+Expr operator-(Expr const& lhs, Expr const& rhs)
+{
+    return Expr(internal::OpCode::Sub, lhs, rhs);
+}
+
 Expr operator*(Expr const& lhs, Expr const& rhs)
 {
     return Expr(internal::OpCode::Mul, lhs, rhs);
+}
+
+Expr operator/(Expr const& lhs, Expr const& rhs)
+{
+    return Expr(internal::OpCode::Div, lhs, rhs);
 }
 
 std::ostream& operator<<(std::ostream& outs, Expr const& expr)

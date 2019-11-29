@@ -43,8 +43,8 @@ private:
 
     constexpr static std::size_t MaxExpressionSize = 300;
     constexpr static std::size_t TournamentSize = 5;
-    constexpr static std::size_t InitialDepth = 1;
-    constexpr static std::size_t MutationDepth = 1;
+    constexpr static std::size_t InitialDepth = 2;
+    constexpr static std::size_t MutationDepth = 2;
     constexpr static double MutationProbabillity = 0.05;
 
     std::vector<Individual> population_;
@@ -63,15 +63,13 @@ private:
         typename ForwardIt,
         typename OutputIt,
         typename RngT>
-    ForwardIt SelectAndCrossover(
+    void SelectAndCrossover(
         ForwardIt first,
         ForwardIt last,
         OutputIt outIt,
         RngT& rng)
     {
-        if(std::distance(first, last) < 3)
-            // Can't crossover fewwer than 2 individuals so do not proceed...
-            return first;
+        assert(std::distance(first, last) < 3);
 
         // The location where the parents can be found
         auto parentIt = first;
@@ -97,31 +95,28 @@ private:
         auto childB = SubTreeCrossover(std::next(parentIt)->function, parentIt->function, rng);
         *(outIt++) = Individual{std::move(childA), 0};
         *(outIt++) = Individual{std::move(childB), 0};
-        return std::next(first);
     }
 
     template<
         typename ForwardIt,
         typename OutputIt,
         typename RngT>
-    ForwardIt SelectAndReplicate(
+    void SelectAndReplicate(
         ForwardIt first,
         ForwardIt last,
         OutputIt outIt,
         RngT& rng)
     {
+        assert (it == last);
         auto it = Roulette(
             first,
             last,
             rng,
             [](auto const& c) noexcept { return 1 / c.fitness; });
 
-        if (it == last)
-            return it;
-
         if(std::uniform_real_distribution<>{0, 1}(rng) < MutationProbabillity)
         {
-            auto& temp = it->function;
+            auto temp = it->function;
             using Distribution = std::uniform_int_distribution<std::size_t>;
             auto const Id = Distribution{1, temp.Count() - 1}(rng);
             temp.Replace(
@@ -130,12 +125,11 @@ private:
                     rng,
                     historicalData_.DataCount(),
                     MutationDepth));
+            *outIt = Individual{std::move(temp), 0};
         }
-
-        *outIt = std::move(*it);
+        else
+            *outIt = *it;
         ++outIt;
-        std::iter_swap(first, it);
-        return std::next(first);
     }
 };
 
@@ -173,13 +167,8 @@ GPPolicy::GPPolicy(
 void GPPolicy::Initialise()
 {
     rng_.seed(std::random_device{}());
-    auto& x = population_.front().function;
-    x = Const(0);
-    for(std::size_t i{}; i < historicalData_.DataCount(); ++i)
-        x = x + Arg(i);
-
     std::generate(
-        population_.begin() + 1,
+        population_.begin(),
         population_.end(),
         [&]()
         {
@@ -197,20 +186,26 @@ void GPPolicy::Initialise()
 
 void GPPolicy::Step()
 {
+
     std::vector<Individual> newGeneration{};
-    for(auto i = population_.begin(); i != population_.end();)
+    while(newGeneration.size() < population_.size())
     {
-        i = SelectAndReplicate(
-            i,
-            population_.end(),
-            std::back_inserter(newGeneration),
-            rng_);
-        i = SelectAndCrossover(
-            i,
-            population_.end(),
-            std::back_inserter(newGeneration),
-            rng_);
+        if(std::uniform_real_distribution<>{0, 1}(rng_) < 0.5)
+            SelectAndReplicate(
+                population_.begin(),
+                population_.end(),
+                std::back_inserter(newGeneration),
+                rng_);
+        else
+            SelectAndCrossover(
+                population_.begin(),
+                population_.end(),
+                std::back_inserter(newGeneration),
+                rng_);
     }
+
+    // Fit the next generation
+    newGeneration.resize(population_.size());
 
     std::for_each(newGeneration.begin(),
         newGeneration.end(),
@@ -241,6 +236,7 @@ void GPPolicy::Step()
         population_.end(),
         [](auto const& a, auto const& b) {return a.fitness < b.fitness; });
     
+    //std::cout << iteration_ << " " << i->fitness << '\n';
     //std::cout << i->function << '\n';
     if (i->fitness < bestFitness_)
     {
@@ -287,11 +283,25 @@ Expr GenerateRandomExpr(
     std::size_t maxDepth)
 {
     if (maxDepth == 0)
-        return std::uniform_real_distribution<>{ 0, 1 }(rng) < 0.5
-            ? Const(std::uniform_real_distribution<>{ 0, 100 }(rng))
-            : Arg(std::uniform_int_distribution<std::uint64_t>{0, argCount - 1}(rng));
+    {
+        auto const X = std::uniform_real_distribution<>{ 0, 1 }(rng);
+        if(X < 0.25)
+            return Const(std::uniform_real_distribution<>{ 0, 100 }(rng));
+        else
+            return Arg(std::uniform_int_distribution<std::uint64_t>{0, argCount - 1}(rng));
+    }
     else
-        return std::uniform_real_distribution<>{ 0, 1 }(rng) < 0.5
-            ? GenerateRandomExpr(rng, argCount, maxDepth - 1) + GenerateRandomExpr(rng, argCount, maxDepth - 1)
-            : GenerateRandomExpr(rng, argCount, maxDepth - 1) * GenerateRandomExpr(rng, argCount, maxDepth - 1);
+    {
+        auto const Lhs = GenerateRandomExpr(rng, argCount, maxDepth - 1);
+        auto const Rhs = GenerateRandomExpr(rng, argCount, maxDepth - 1);
+        auto const X = std::uniform_real_distribution<>{ 0, 1 }(rng);
+        if(X < 0.25)
+            return Lhs + Rhs;
+        else if (X < 0.50)
+            return Lhs - Rhs;
+        else if (X < 0.75)
+            return Lhs * Rhs;
+        else
+            return Lhs / Rhs;
+    }
 }
