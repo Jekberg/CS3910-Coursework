@@ -149,7 +149,10 @@ Particles::Individual Particles::FindBest(Compare&& compare)
     auto it = std::min_element(
         population_.begin(),
         population_.end(),
-        [&](auto&& a, auto&& b) {return compare(a.bestFitness, b.bestFitness); });
+        [&](auto&& a, auto&& b)
+        {
+            return compare(a.bestFitness, b.bestFitness);
+        });
     return *it;
 }
 
@@ -232,7 +235,8 @@ void BasicPSO<EnvT, ControlPolicy>::Step()
 
     particles_.ForAll([&](auto&& p)
     {
-        p.fitness = this->Evaluate(p); // ControlPolicy::Evaluate issues a compiler bugon GCC
+        // ControlPolicy::Evaluate issues a compiler bug on GCC
+        p.fitness = this->Evaluate(p);
         if (ControlPolicy::Compare(p.fitness, p.bestFitness))
         {
             p.bestFitness = p.fitness;

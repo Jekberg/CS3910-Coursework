@@ -18,7 +18,8 @@ double Estemate(PalletData& data, ForwardIt weightIt);
 class PSOPalletDemandOptimisation
 {
 public:
-    constexpr static auto StartingFitness = std::numeric_limits<double>::infinity();
+    constexpr static auto StartingFitness
+        = std::numeric_limits<double>::infinity();
 
     explicit PSOPalletDemandOptimisation(PalletData const& historicalData);
 
@@ -43,14 +44,17 @@ private:
     std::vector<std::minstd_rand> rngs_;
 };
 
-using PSOPalletDemandMinimisation = BasicPSO<PalletData, PSOPalletDemandOptimisation>;
+using PSOPalletDemandMinimisation = BasicPSO<
+    PalletData,
+    PSOPalletDemandOptimisation>;
 
 
 template<typename EnvT, typename PSOAlgorithmT>
 class PSOMetaOptimisation
 {
 public:
-    constexpr static auto StartingFitness = std::numeric_limits<double>::infinity();
+    constexpr static auto StartingFitness
+        = std::numeric_limits<double>::infinity();
 
     explicit PSOMetaOptimisation(EnvT const& env);
 
@@ -122,7 +126,8 @@ int main(int argc, char const** argv)
         runPSO("sample/cwk_train.csv");
 }
 
-PSOPalletDemandOptimisation::PSOPalletDemandOptimisation(PalletData const& historicalData)
+PSOPalletDemandOptimisation::PSOPalletDemandOptimisation(
+    PalletData const& historicalData)
     : historicalData_{ historicalData }
 {
 }
@@ -173,19 +178,11 @@ void PSOPalletDemandOptimisation::Update(
             p.position,
             rngs_[p.id],
             params);
-
-        std::for_each(
-            p.position,
-            p.position + Count,
-            [](auto& x)
-            {
-                if (x < 0)
-                    x = 0;
-            });
     });
 }
 
-double PSOPalletDemandOptimisation::Evaluate(typename Particles::Individual const& particle)
+double PSOPalletDemandOptimisation::Evaluate(
+    typename Particles::Individual const& particle)
 {
     return Estemate(historicalData_, particle.position);
 }
@@ -255,7 +252,8 @@ void PSOMetaOptimisation<EnvT, PSOAlgorithmT>::Update(
 }
 
 template<typename EnvT, typename PSOAlgorithmT>
-double PSOMetaOptimisation<EnvT, PSOAlgorithmT>::Evaluate(typename Particles::Individual const& particle)
+double PSOMetaOptimisation<EnvT, PSOAlgorithmT>::Evaluate(
+    typename Particles::Individual const& particle)
 {
     PSOParameters params;
     std::memcpy(&params, particle.position, sizeof(params));

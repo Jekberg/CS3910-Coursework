@@ -31,7 +31,7 @@ namespace internal
         case OpCode::Sub:
         case OpCode::Mul:
         case OpCode::Div:
-            return op;
+            return static_cast<int>(op);
         }
 
         return -1;
@@ -196,7 +196,7 @@ namespace internal
     template<typename ForwardIt>
     ForwardIt FindExpr(ForwardIt first, ForwardIt last, std::size_t id)
     {
-        if(id-- == 0)
+        if(id == 0)
             return first;
         
         while (first != last)
@@ -404,17 +404,31 @@ RandomIt SampleGroup(RandomIt first, RandomIt last, std::size_t k, RngT& rng)
 }
 
 template<typename RngT>
-Expr SubTreeCrossover(
+std::pair<Expr, Expr> SubTreeCrossover(
     Expr const& a,
     Expr const& b,
     RngT& rng)
 {
     using Distribution = std::uniform_int_distribution<std::size_t>;
-    auto idA = Distribution{1, a.Count() - 1}(rng);
-    auto idB = Distribution{1, b.Count() - 1}(rng);
-    auto temp{a};
-    temp.Replace(idA, b.SubExpr(idB));
-    return temp;
+    auto const IdA = Distribution{1, a.Count() - 1}(rng);
+
+    auto subExprA = a.SubExpr(IdA);
+    auto childA{ a };
+
+    auto idB = Distribution{ 1, b.Count() - 1 }(rng);
+    auto subExprB = b.SubExpr(idB);
+
+    while(subExprA.Count() + 1 < subExprB.Count())
+    {
+        auto const SubIdB = Distribution{ 1, subExprB.Count() - 1 }(rng);
+        subExprB = subExprB.SubExpr(SubIdB);
+        idB += SubIdB;
+    }
+
+    childA.Replace(IdA, subExprB);
+    auto childB{ b };
+    childB.Replace(idB, a.SubExpr(IdA));
+    return {childA, childB};
 }
 
 #endif // !CS3910__GP_H_
