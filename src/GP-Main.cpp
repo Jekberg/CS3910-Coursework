@@ -41,11 +41,10 @@ private:
         double fitness;
     };
 
-    constexpr static std::size_t MaxExpressionSize = 1000;
+    constexpr static std::size_t MaxExpressionSize = 500;
     constexpr static std::size_t TournamentSize = 5;
     constexpr static std::size_t InitialDepth = 2;
     constexpr static std::size_t MutationDepth = 2;
-    constexpr static double MutationProbabillity = 0.05;
 
     std::vector<Individual> population_;
 
