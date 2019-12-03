@@ -3,10 +3,40 @@
 
 #include <algorithm>
 #include <cassert>
+#include <exception>
 #include <fstream>
 #include <iterator>
 #include <string>
 #include <vector>
+
+class FailedToReadData final : public std::exception
+{
+public:
+    char const* what() const noexcept final
+    {
+        return "Unable to read the data";
+    }
+};
+
+class InvalidFileName final : public std::exception
+{
+public:
+    explicit InvalidFileName(char const* fileName);
+
+    char const* what() const noexcept final;
+private:
+    std::string const FileName_;
+};
+
+InvalidFileName::InvalidFileName(char const* fileName)
+    : FileName_{ fileName }
+{
+}
+
+char const* InvalidFileName::what() const noexcept
+{
+    return FileName_.c_str();
+}
 
 class PalletData
 {
@@ -48,7 +78,7 @@ private:
 
         file.open(fileName);
         if(!file.is_open())
-            return false;
+            throw InvalidFileName{fileName};
 
         std::string line;
         std::vector<std::size_t> data{};
@@ -90,7 +120,7 @@ PalletData::PalletData(char const* fileName)
         dataPointCount_,
         std::back_inserter(demand_),
         std::back_inserter(dataPoints_)))
-        throw 0;
+        throw FailedToReadData{};
 }
 
 std::size_t PalletData::RowCount() const noexcept

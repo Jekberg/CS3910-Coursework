@@ -1,3 +1,4 @@
+#include "CS3910/Core.h"
 #include "CS3910/Simulation.h"
 #include "CS3910/Pallets.h"
 #include "CS3910/GP.h"
@@ -13,7 +14,7 @@ Expr GenerateRandomExpr(
     std::uint64_t argCount,
     std::size_t maxDepth);
 
-class GPPolicy final
+class GPPalletDemandMinimisation final
 {
 public:
     struct Result
@@ -22,7 +23,7 @@ public:
         double fitness;
     };
 
-    explicit GPPolicy(
+    explicit GPPalletDemandMinimisation(
         PalletData historicalData,
         std::size_t populationSize)
         noexcept;
@@ -45,6 +46,7 @@ private:
     constexpr static std::size_t TournamentSize = 5;
     constexpr static std::size_t InitialDepth = 2;
     constexpr static std::size_t MutationDepth = 2;
+    constexpr static std::size_t MaxIteration = 10000;
 
     std::vector<Individual> population_;
 
@@ -54,48 +56,51 @@ private:
 
     double bestFitness_ = std::numeric_limits<double>::infinity();
 
-    Expr bestFunction_;
+    Expr bestFunction_ = Const(0);
 
     std::size_t iteration_{};
+
+    std::size_t PopulationSize_;
 };
 
-int main(int argc, char const** argv)
+int main(int argc, char const** argv) try
 {
-    auto runGP = [](char const* arg)
-    {
-        GPPolicy gp{ PalletData{arg}, 100 };
-        auto result = Simulate(gp);
+    auto dataSet = ReadPalletData(argc, argv, std::cout);
 
-        std::cout
-            << result.fitness << "| "
-            << result.function << "\n";
-    };
+    auto const PopulationSize = 100;
+    GPPalletDemandMinimisation gp{ dataSet.trainingData, PopulationSize };
+    auto result = Simulate(gp);
 
-    if(1 < argc)
-        std::for_each_n(
-            std::execution::seq,
-            argv + 1,
-            argc - 1,
-            runGP);
-    else
-        runGP("sample/cwk_train.csv");
+    std::cout
+        << Estemate(dataSet.testingData, result.function) << "| "
+        << result.function << "\n";
+}
+catch (InvalidFileName& e)
+{
+    std::cout << "Cannot read file: " << e.what();
+}
+catch (std::exception& e)
+{
+    std::cout << e.what();
 }
 
-GPPolicy::GPPolicy(
+GPPalletDemandMinimisation::GPPalletDemandMinimisation(
     PalletData historicalData,
     std::size_t populationSize)
     noexcept
-    : population_{populationSize}
+    : population_{}
     , historicalData_{std::move(historicalData)}
+    , PopulationSize_{populationSize}
 {
 }
 
-void GPPolicy::Initialise()
+void GPPalletDemandMinimisation::Initialise()
 {
     rng_.seed(std::random_device{}());
-    std::generate(
-        population_.begin(),
-        population_.end(),
+    population_.clear();
+    std::generate_n(
+        std::back_inserter(population_),
+        PopulationSize_,
         [&]()
         {
             Individual c{
@@ -110,7 +115,7 @@ void GPPolicy::Initialise()
 
 }
 
-void GPPolicy::Step()
+void GPPalletDemandMinimisation::Step()
 {
     std::vector<Individual> newGeneration{};
     while(newGeneration.size() < population_.size())
@@ -118,6 +123,7 @@ void GPPolicy::Step()
         auto const X = std::uniform_real_distribution<>{0, 1}(rng_);
         if(X < 0.05)
         {
+            // Select and mutate
             auto it = Roulette(
                 population_.cbegin(),
                 population_.cend(),
@@ -138,6 +144,7 @@ void GPPolicy::Step()
         }
         else if(X < 0.55)
         {
+            // Select and replicate
             auto it = Roulette(
                 population_.cbegin(),
                 population_.cend(),
@@ -147,6 +154,7 @@ void GPPolicy::Step()
         }
         else
         {
+            // Select and crossover
             // Find the first parent using a tornament
             auto i = SampleGroup(
                 population_.begin(),
@@ -176,7 +184,7 @@ void GPPolicy::Step()
                 });
             std::iter_swap(population_.begin() + 1, i);
 
-            auto [childA, childB] = SubTreeCrossover(
+            auto [childA, childB] = SubtreeCrossover(
                 population_[0].function,
                 population_[1].function,
                 rng_);
@@ -185,9 +193,6 @@ void GPPolicy::Step()
             newGeneration.emplace_back(Individual{std::move(childB), 0.0});
         }
     }
-
-    // Fit the next generation
-    newGeneration.resize(population_.size());
 
     std::for_each(newGeneration.begin(),
         newGeneration.end(),
@@ -199,9 +204,10 @@ void GPPolicy::Step()
                 c.function = GenerateRandomExpr(
                     rng_,
                     historicalData_.DataCount(),
-                    2);
+                    InitialDepth);
         });
 
+    // Evaluate all the new individuals
     std::for_each(
         std::execution::par,
         newGeneration.begin(),
@@ -210,16 +216,35 @@ void GPPolicy::Step()
         {
             c.fitness = Estemate(historicalData_, c.function);
         });
+
+
+    // Fit the next generation
+    while(population_.size() < newGeneration.size())
+    {
+        auto it = std::max_element(
+            newGeneration.cbegin(),
+            newGeneration.cend(),
+            [](auto const& a, auto const& b) noexcept
+            {
+                return a.fitness < b.fitness;
+            });
+        newGeneration.erase(it);
+    }
+
+    // Next generation
     population_ = std::move(newGeneration);
 
+    // Find the best individual
     auto i = std::min_element(
         std::execution::par,
-        population_.begin(),
-        population_.end(),
-        [](auto const& a, auto const& b) {return a.fitness < b.fitness; });
-    
-    //std::cout << iteration_ << " " << i->fitness << '\n';
-    //std::cout << i->function << '\n';
+        population_.cbegin(),
+        population_.cend(),
+        [](auto const& a, auto const& b) noexcept
+        {
+            return a.fitness < b.fitness;
+        });
+
+    // Is the best individual the best overall?
     if (i->fitness < bestFitness_)
     {
         bestFunction_ = i->function;
@@ -227,12 +252,13 @@ void GPPolicy::Step()
     }
 }
 
-bool GPPolicy::Terminate() noexcept
+bool GPPalletDemandMinimisation::Terminate() noexcept
 {
-    return 10000 < ++iteration_;
+    return MaxIteration < ++iteration_;
 }
 
-typename GPPolicy::Result GPPolicy::Complete()
+typename GPPalletDemandMinimisation::Result
+GPPalletDemandMinimisation::Complete()
 {
     return {bestFunction_, bestFitness_};
 }
@@ -277,13 +303,16 @@ Expr GenerateRandomExpr(
         auto const Lhs = GenerateRandomExpr(rng, argCount, maxDepth - 1);
         auto const Rhs = GenerateRandomExpr(rng, argCount, maxDepth - 1);
         auto const X = std::uniform_real_distribution<>{ 0, 1 }(rng);
-        if(X < 0.25)
+        if(X < 0.30)
             return Lhs + Rhs;
-        else if (X < 0.50)
+        else if (X < 0.60)
             return Lhs - Rhs;
-        else if (X < 0.75)
+        else if (X < 0.90)
             return Lhs * Rhs;
         else
+            // Division seem to be a bit dangerous since division by a small
+            // number will generate VERY large numbers...
+            // Make division more rare!
             return Lhs / Rhs;
     }
 }

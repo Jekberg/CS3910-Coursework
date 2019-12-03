@@ -54,6 +54,7 @@ namespace internal
         return outs;
     }
 
+    // Find the exclusive end of a prefix expressions
     template<typename ForwardIt>
     ForwardIt EndOfExpr(ForwardIt first, ForwardIt last)
     {
@@ -76,8 +77,12 @@ namespace internal
         return last;
     }
 
+    // Evaluate a prefix expression
     template<typename ForwardIt, typename RandomIt>
-    std::pair<double, ForwardIt> EvalExpr(ForwardIt first, ForwardIt last, RandomIt argIt)
+    std::pair<double, ForwardIt> EvalExpr(
+        ForwardIt first,
+        ForwardIt last,
+        RandomIt argIt)
     {
         assert(first != last && "Cannot evaluate an empty Expr");
         switch (*first)
@@ -113,8 +118,10 @@ namespace internal
                 auto [lhsVal, lhsEnd] = EvalExpr(std::next(first), last, argIt);
                 auto [rhsVal, rhsEnd] = EvalExpr(lhsEnd, last, argIt);
                 if(rhsVal == 0.0)
+                    // Protected division...
                     return {std::numeric_limits<double>::infinity(), rhsEnd};
-                return {lhsVal / rhsVal, rhsEnd};
+                else
+                    return { lhsVal / rhsVal, rhsEnd };
             }
         }
 
@@ -122,6 +129,7 @@ namespace internal
         return {0.0, last};
     }
 
+    // Print a prefix expression as infix
     template<typename ForwardIt>
     ForwardIt PrintExpr(
         ForwardIt first,
@@ -169,6 +177,8 @@ namespace internal
         return last;
     }
 
+    // Count the total number of terminals and non-terminals in a prefix
+    // expressions
     template<typename ForwardIt>
     std::size_t CountExpr(ForwardIt first, ForwardIt last)
     {
@@ -193,6 +203,9 @@ namespace internal
         return count;
     }
 
+    // Find a terminal or non-terminal in the prefix expression by traversing
+    // the tree in deptht-first order. The id of a node corresponds to it's
+    // order of visitation.
     template<typename ForwardIt>
     ForwardIt FindExpr(ForwardIt first, ForwardIt last, std::size_t id)
     {
@@ -222,8 +235,11 @@ namespace internal
     }
 }
 
+
+// Expr encapsulate the prefix notations and provide some basic manipulation.
 class Expr final
 {
+    // Functions for composing expressions.
     friend Expr Const(double constVal);
     friend Expr Arg(std::uint64_t argId);
     friend Expr operator+(Expr const& lhs, Expr const& rhs);
@@ -231,17 +247,20 @@ class Expr final
     friend Expr operator*(Expr const& lhs, Expr const& rhs);
     friend Expr operator/(Expr const& lhs, Expr const& rhs);
 public:
-    explicit Expr() = default;
-
+    // Replace a node in the Expr with another Expr.
     bool Replace(std::size_t id, Expr const& expr);
 
+    // Evaluate the expression using a range of arguments.
     template<typename RandomIt>
     double Eval(RandomIt argIt) const;
 
+    // Print the expression.
     std::ostream& Print(std::ostream& outs) const;
 
+    // Count the number of elements in the expression.
     std::size_t Count() const noexcept;
 
+    // Extract a Sub Expr from this Expr starting from a given node.
     Expr SubExpr(std::size_t id) const;
 
 
@@ -286,6 +305,7 @@ private:
     }
 };
 
+// Members of Expr
 bool Expr::Replace(std::size_t id, Expr const& expr)
 {
     auto i = internal::FindExpr(expr_.begin(), expr_.end(), id);
@@ -328,7 +348,7 @@ std::ostream& Expr::Print(std::ostream& outs) const
     internal::PrintExpr(expr_.begin(), expr_.end(), outs);
     return outs;
 }
-
+// Friends of Expr
 Expr Const(double constVal)
 {
     return Expr{constVal};
@@ -364,6 +384,7 @@ std::ostream& operator<<(std::ostream& outs, Expr const& expr)
     return expr.Print(outs);
 }
 
+// Utillities
 template<typename ForwardIt, typename RngT, typename F>
 ForwardIt Roulette(ForwardIt first, ForwardIt last, RngT& rng, F&& f)
 {
@@ -384,10 +405,11 @@ template<typename RandomIt, typename RngT>
 RandomIt SampleGroup(RandomIt first, RandomIt last, std::size_t k, RngT& rng)
 {
     // Move k elements selected at random to the front of the range.
-    assert(first != last);
-    assert(k != 0);
+    assert(first != last && "Cannot create a sample group of an empty range");
+    assert(k != 0 && "Cannot create sample group of size 0");
 
-    if (auto count = static_cast<std::size_t>(std::distance(first, last)); count < k)
+    if (auto count = static_cast<std::size_t>(std::distance(first, last));
+        count < k)
         k = count;
 
     for (auto i = first; i != first + k; ++i)
@@ -404,20 +426,21 @@ RandomIt SampleGroup(RandomIt first, RandomIt last, std::size_t k, RngT& rng)
 }
 
 template<typename RngT>
-std::pair<Expr, Expr> SubTreeCrossover(
+std::pair<Expr, Expr> SubtreeCrossover(
     Expr const& a,
     Expr const& b,
     RngT& rng)
 {
     using Distribution = std::uniform_int_distribution<std::size_t>;
     auto const IdA = Distribution{1, a.Count() - 1}(rng);
-
     auto subExprA = a.SubExpr(IdA);
-    auto childA{ a };
 
     auto idB = Distribution{ 1, b.Count() - 1 }(rng);
     auto subExprB = b.SubExpr(idB);
 
+    // If one of the sub-trees is much larger than the other, then keep
+    // selecting sub-trees from one of the sub-trees so that the sizes may
+    // match.
     while(subExprA.Count() + 1 < subExprB.Count())
     {
         auto const SubIdB = Distribution{ 1, subExprB.Count() - 1 }(rng);
@@ -425,6 +448,7 @@ std::pair<Expr, Expr> SubTreeCrossover(
         idB += SubIdB;
     }
 
+    auto childA{ a };
     childA.Replace(IdA, subExprB);
     auto childB{ b };
     childB.Replace(idB, a.SubExpr(IdA));

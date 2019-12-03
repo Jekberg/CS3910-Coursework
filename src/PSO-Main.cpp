@@ -1,3 +1,4 @@
+#include "CS3910/Core.h"
 #include "CS3910/Pallets.h"
 #include "CS3910/PSO.h"
 #include "CS3910/Simulation.h"
@@ -86,44 +87,42 @@ using MetaPSOPalletDemandMinimisation = BasicPSO<
     PalletData,
     PSOMetaOptimisation<PalletData, PSOPalletDemandMinimisation>>;
 
-int main(int argc, char const** argv)
+int main(int argc, char const** argv) try
 {
-    auto runPSO = [](char const* arg)
-    {
-        PalletData data{arg};
-        MetaPSOPalletDemandMinimisation hyperPSO{data, 21, 100};
-        auto hyperResult = Simulate(hyperPSO);
-        
-        PSOParameters params;
-        std::memcpy(&params, hyperResult.position.data(), sizeof(params));
-        
-        auto const Particles = static_cast<std::size_t>(
-            20 + std::sqrt(data.DataCount()));
-        PSOPalletDemandMinimisation pso{
-            data,
-            Particles,
-            100000,
-            params};
-        auto result = Simulate(pso);
+    auto dataSet = ReadPalletData(argc, argv, std::cout);
+
+
+    MetaPSOPalletDemandMinimisation hyperPSO{dataSet.trainingData, 21, 100};
+    auto hyperResult = Simulate(hyperPSO);
     
-        std::cout << result.fitness << '|';
-        for(auto&& x: result.position)
-            std::cout << ' ' << x;
-
-        std::cout << "| (";
-        for(auto&& x: hyperResult.position)
-            std::cout << ' ' << x;
-        std::cout << " )\n";
-    };
-
-    if(1 < argc)
-        std::for_each_n(
-            std::execution::seq,
-            argv + 1,
-            argc - 1,
-            runPSO);
-    else
-        runPSO("sample/cwk_train.csv");
+    PSOParameters params;
+    std::memcpy(&params, hyperResult.position.data(), sizeof(params));
+    
+    auto const Particles = static_cast<std::size_t>(
+        20 + std::sqrt(dataSet.trainingData.DataCount()));
+    PSOPalletDemandMinimisation pso{
+        dataSet.trainingData,
+        Particles,
+        100000,
+        params};
+    auto result = Simulate(pso);
+    
+    std::cout << Estemate(dataSet.testingData, result.position.begin()) << '|';
+    for(auto&& x: result.position)
+        std::cout << ' ' << x;
+    
+    std::cout << "| (";
+    for(auto&& x: hyperResult.position)
+        std::cout << ' ' << x;
+    std::cout << " )\n";
+}
+catch (InvalidFileName& e)
+{
+    std::cout << "Cannot read file: " << e.what();
+}
+catch (std::exception& e)
+{
+    std::cout << e.what();
 }
 
 PSOPalletDemandOptimisation::PSOPalletDemandOptimisation(
