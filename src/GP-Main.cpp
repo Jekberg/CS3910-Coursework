@@ -290,10 +290,10 @@ Expr GenerateRandomExpr(
     std::uint64_t argCount,
     std::size_t maxDepth)
 {
+    auto const X = std::uniform_real_distribution<>{ 0, 1 }(rng);
     if (maxDepth == 0)
     {
-        auto const X = std::uniform_real_distribution<>{ 0, 1 }(rng);
-        if(X < 0.25)
+        if(X < 0.50)
             return Const(std::uniform_real_distribution<>{ 0, 100 }(rng));
         else
             return Arg(std::uniform_int_distribution<std::uint64_t>{0, argCount - 1}(rng));
@@ -302,17 +302,15 @@ Expr GenerateRandomExpr(
     {
         auto const Lhs = GenerateRandomExpr(rng, argCount, maxDepth - 1);
         auto const Rhs = GenerateRandomExpr(rng, argCount, maxDepth - 1);
-        auto const X = std::uniform_real_distribution<>{ 0, 1 }(rng);
-        if(X < 0.30)
+        if(X < 0.33)
             return Lhs + Rhs;
-        else if (X < 0.60)
+        else if (X < 0.67)
             return Lhs - Rhs;
-        else if (X < 0.90)
+        else //if (X < 0.90)
             return Lhs * Rhs;
-        else
-            // Division seem to be a bit dangerous since division by a small
-            // number will generate VERY large numbers...
-            // Make division more rare!
-            return Lhs / Rhs;
+        // Division seem to be a bit dangerous since division by a small
+        // number will generate VERY large numbers... so forbid division.
+        //else
+        //    return Lhs / Rhs;
     }
 }
