@@ -43,5 +43,7 @@ Dataset ReadPalletData(int argc, char const** argv, std::ostream& outs)
     Dataset data{PalletData{trainDataFile}, PalletData{testDataFile}};
     if(data.trainingData.DataCount() != data.testingData.DataCount())
         throw DataSizeMismatch{};
+    else
+        return data;
 }
 #endif // !CS3910__CORE_H_
