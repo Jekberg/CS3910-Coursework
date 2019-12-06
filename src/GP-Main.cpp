@@ -42,11 +42,11 @@ private:
         double fitness;
     };
 
-    constexpr static std::size_t MaxExpressionSize = 500;
+    constexpr static std::size_t MaxExpressionSize = 1000;
     constexpr static std::size_t TournamentSize = 5;
     constexpr static std::size_t InitialDepth = 2;
     constexpr static std::size_t MutationDepth = 2;
-    constexpr static std::size_t MaxIteration = 10000;
+    constexpr static std::size_t MaxIteration = 1000;
 
     std::vector<Individual> population_;
 
@@ -294,7 +294,7 @@ Expr GenerateRandomExpr(
     if (maxDepth == 0)
     {
         if(X < 0.50)
-            return Const(std::uniform_real_distribution<>{ 0, 100 }(rng));
+            return Const(std::uniform_real_distribution<>{ 0, 1000 }(rng));
         else
             return Arg(std::uniform_int_distribution<std::uint64_t>{0, argCount - 1}(rng));
     }
