@@ -42,8 +42,9 @@ private:
         double fitness;
     };
 
+    // Configuration
     constexpr static std::size_t MaxExpressionSize = 1000;
-    constexpr static std::size_t TournamentSize = 5;
+    constexpr static std::size_t TournamentSize = 4;
     constexpr static std::size_t InitialDepth = 2;
     constexpr static std::size_t MutationDepth = 2;
     constexpr static std::size_t MaxIteration = 1000;
@@ -142,7 +143,7 @@ void GPPalletDemandMinimisation::Step()
 
             newGeneration.emplace_back(Individual{std::move(temp), 0.0});
         }
-        else if(X < 0.55)
+        else if(X < 0.45)
         {
             // Select and replicate
             auto it = Roulette(
@@ -222,6 +223,7 @@ void GPPalletDemandMinimisation::Step()
     while(population_.size() < newGeneration.size())
     {
         auto it = std::max_element(
+            std::execution::par,
             newGeneration.cbegin(),
             newGeneration.cend(),
             [](auto const& a, auto const& b) noexcept
@@ -247,6 +249,7 @@ void GPPalletDemandMinimisation::Step()
     // Is the best individual the best overall?
     if (i->fitness < bestFitness_)
     {
+        //std::cout << i->fitness << ' ' << iteration_ << '\n';
         bestFunction_ = i->function;
         bestFitness_ = i->fitness;
     }
@@ -294,7 +297,7 @@ Expr GenerateRandomExpr(
     if (maxDepth == 0)
     {
         if(X < 0.50)
-            return Const(std::uniform_real_distribution<>{ 0, 1000 }(rng));
+            return Const(std::uniform_real_distribution<>{ 0, 100 }(rng));
         else
             return Arg(std::uniform_int_distribution<std::uint64_t>{0, argCount - 1}(rng));
     }
