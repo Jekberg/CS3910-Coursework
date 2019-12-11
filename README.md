@@ -16,11 +16,10 @@ be installed as part of VS
 is Debug which may run a bit slow, but this can be changed right next to the
 "Run" button.
 
-If the project is being built on Linux (Or maybe Mac), the run the command
-"cmake -S. -B./build -DCMAKE_BUILD_TYPE=Release", thios will generate a release
-build system. Then run "cmake --build build" to build the two solutions
+If the project is being built on Linux (Or maybe Mac), the run the command`cmake -S. -B./build -DCMAKE_BUILD_TYPE=Release`, this will generate a release
+build system. Then run `cmake --build build` to build the two solutions
 (There shouldn't be any errors). The executables should be placed in the
-"./build/bin" directory. The linux/mac solutions may require the TBB library,
+`./build/bin` directory. The linux/mac solutions may require the TBB library,
 but this may ship as part of the platform?
 
 ## How to run
