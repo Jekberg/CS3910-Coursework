@@ -441,12 +441,12 @@ std::pair<Expr, Expr> SubtreeCrossover(
     // If one of the sub-trees is much larger than the other, then keep
     // selecting sub-trees from one of the sub-trees so that the sizes may
     // match.
-    while(subExprA.Count() + 1 < subExprB.Count())
-    {
-        auto const SubIdB = Distribution{ 1, subExprB.Count() - 1 }(rng);
-        subExprB = subExprB.SubExpr(SubIdB);
-        idB += SubIdB;
-    }
+    //while(subExprA.Count() + 1 < subExprB.Count())
+    //{
+    //    auto const SubIdB = Distribution{ 1, subExprB.Count() - 1 }(rng);
+    //    subExprB = subExprB.SubExpr(SubIdB);
+    //    idB += SubIdB;
+    //}
 
     auto childA{ a };
     childA.Replace(IdA, subExprB);

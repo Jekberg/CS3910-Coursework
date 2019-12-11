@@ -225,6 +225,20 @@ void BasicPSO<EnvT, ControlPolicy>::Step()
     auto const Count = particles_.VectorSize();
     if (ControlPolicy::Compare(globalBest.bestFitness, globalBestFitness_))
     {
+        // Uncomment this line if you dare to look at the best value per
+        // iteration!
+        // The output is a bit mangled due to the nested PSO algorithms
+        // running.
+        //std::cout << ">>> " << iteration_
+        //    << ": " << globalBest.fitness;
+        //
+        //std::cout << " [" << *globalBest.position;
+        //std::for_each(
+        //    globalBest.position + 1,
+        //    globalBest.position + particles_.VectorSize(),
+        //    [](auto x){std::cout << ' ' << x;});
+        //std::cout << "]\n";
+
         globalBestFitness_ = globalBest.bestFitness;
         globalBestPosition_.assign(
             globalBest.bestPosition,

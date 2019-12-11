@@ -48,6 +48,10 @@ private:
     constexpr static std::size_t InitialDepth = 2;
     constexpr static std::size_t MutationDepth = 2;
     constexpr static std::size_t MaxIteration = 1000;
+    constexpr static double MutationPropability = 0.05;
+    constexpr static double ReplicationPropabillity = 0.15;
+    constexpr static double CrossoverProbabillity = 1 - (MutationPropability
+        + ReplicationPropabillity);
 
     std::vector<Individual> population_;
 
@@ -121,8 +125,10 @@ void GPPalletDemandMinimisation::Step()
     std::vector<Individual> newGeneration{};
     while(newGeneration.size() < population_.size())
     {
-        auto const X = std::uniform_real_distribution<>{0, 1}(rng_);
-        if(X < 0.05)
+        auto const Total = MutationPropability + ReplicationPropabillity
+            + CrossoverProbabillity;
+        auto const X = std::uniform_real_distribution<>{0, Total }(rng_);
+        if(X < MutationPropability)
         {
             // Select and mutate
             auto it = Roulette(
@@ -143,7 +149,7 @@ void GPPalletDemandMinimisation::Step()
 
             newGeneration.emplace_back(Individual{std::move(temp), 0.0});
         }
-        else if(X < 0.45)
+        else if(X < MutationPropability + ReplicationPropabillity)
         {
             // Select and replicate
             auto it = Roulette(
@@ -249,7 +255,10 @@ void GPPalletDemandMinimisation::Step()
     // Is the best individual the best overall?
     if (i->fitness < bestFitness_)
     {
-        //std::cout << i->fitness << ' ' << iteration_ << '\n';
+        // Uncomment this to see the development... Useful for debugging!
+        //std::cout << ">>> " << iteration_
+        //    << ": " << i->fitness
+        //    << " [" << i->function << "]\n";
         bestFunction_ = i->function;
         bestFitness_ = i->fitness;
     }

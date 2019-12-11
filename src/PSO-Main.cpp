@@ -91,13 +91,14 @@ int main(int argc, char const** argv) try
 {
     auto dataSet = ReadPalletData(argc, argv, std::cout);
 
-
+    // Explore some parameter sets
     MetaPSOPalletDemandMinimisation hyperPSO{dataSet.trainingData, 21, 100};
     auto hyperResult = Simulate(hyperPSO);
     
     PSOParameters params;
     std::memcpy(&params, hyperResult.position.data(), sizeof(params));
     
+    // The REAL PSO!!!!!
     auto const Particles = static_cast<std::size_t>(
         20 + std::sqrt(dataSet.trainingData.DataCount()));
     PSOPalletDemandMinimisation pso{
