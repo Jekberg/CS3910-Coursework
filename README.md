@@ -24,7 +24,7 @@ but this may ship as part of the platform?
 
 ## How to run
 
-The solutions can be executed from the root project directory by simply listing the path to the executable from the root of the project (Staring with "./build/bin"). By default the solution will look for the "./sample" folder which contains the csv data files. Running the project in VS will likely error because it wants to launch the project from some weird location... but running it from powershell or CMD should be easy, almoste just like it is done on Unix.
+The solutions can be executed from the root project directory by simply listing the path to the executable from the root of the project (Staring with "./build/bin" (UNLESS Windows...)). By default the solution will look for the "./sample" folder which contains the csv data files. Running the project in VS will likely error because it wants to launch the project from some weird location... but running it from powershell or CMD should be easy, almoste just like it is done on Unix. Windows will generate an "out" folder where the solution is placed depending on if the project was built in release mode or debug mode.
 
 The executables accept 2 optional arguments, these are the relative path to the file containing thetraining data and test data in that order...
 
