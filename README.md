@@ -24,11 +24,13 @@ but this may ship as part of the platform?
 
 ## How to run
 
-...
+The solutions can be executed from the root project directory by simply listing the path to the executable from the root of the project (Staring with "./build/bin"). By default the solution will look for the "./sample" folder which contains the csv data files. Running the project in VS will likely error because it wants to launch the project from some weird location... but running it from powershell or CMD should be easy, almoste just like it is done on Unix.
 
-## Particle Swarm Optimisation
+The executables accept 2 optional arguments, these are the relative path to the file containing thetraining data and test data in that order...
+
+### Particle Swarm Optimisation
 To view the best result from each iteration go to line 228 in PSO.h and uncomment the lines of code.
 The output is a bit mangled since there may be 2 levels of PSO running...
 
-## Genetic Programming
+### Genetic Programming
 To view the best result from each iteration go to line 258 in GP-Main.cpp and uncomment the lines of code.
