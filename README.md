@@ -28,9 +28,15 @@ The solutions can be executed from the root project directory by simply listing 
 
 The executables accept 2 optional arguments, these are the relative path to the file containing thetraining data and test data in that order...
 
+Oh! By the way, the executables to run are called "PSO-EXE" and "GP-EXE"-
+
 ### Particle Swarm Optimisation
+The PSO can be tweaked by changing the code in the PSO-Main.cpp file and the PSO.h file.
+
 To view the best result from each iteration go to line 228 in PSO.h and uncomment the lines of code.
 The output is a bit mangled since there may be 2 levels of PSO running...
 
 ### Genetic Programming
+The GP can be tweaked by changing the code in the GP-Main.cpp file and the GP.h file.
+
 To view the best result from each iteration go to line 258 in GP-Main.cpp and uncomment the lines of code.
